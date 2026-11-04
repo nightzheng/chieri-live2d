@@ -1,0 +1,96 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#333;color:#eee;font:12px monospace">
+<pre id="log"></pre><div id="out"></div>
+<script>
+// Registers a chc face-diff set (base + expression patch) onto a full-body sprite.
+// Finds similarity transform (scale, rotation, translation): target = R(rot)*S(s)*src + t
+const P = new URLSearchParams(location.search);
+const tgtName = P.get('tgt') || '1.png';
+const set = P.get('set') || 'chi12A';
+const exp = P.get('exp') || '001';
+const reg = (P.get('reg') || '400,220,220,180').split(',').map(Number); // x,y,w,h in target
+const log = s => document.getElementById('log').textContent += s + '\n';
+const load = s => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = s; });
+
+function gray(img, w, h, draw) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high';
+  draw(x);
+  const d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h), a = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) { a[i] = d[i * 4 + 3] / 255; g[i] = (0.3 * d[i * 4] + 0.59 * d[i * 4 + 1] + 0.11 * d[i * 4 + 2]); }
+  return { g, a, w, h, c };
+}
+// gradient magnitude images are more robust to lighting / colour grading differences
+function grad(G) {
+  const { g, w, h } = G, o = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x; const gx = g[i + 1] - g[i - 1], gy = g[i + w] - g[i - w];
+    o[i] = Math.sqrt(gx * gx + gy * gy);
+  }
+  return o;
+}
+function ncc(T, tw, th, S, sw, sh, ox, oy, Sa) {
+  let st = 0, ss = 0, stt = 0, sss = 0, sts = 0, n = 0;
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+    const j = (y + oy) * sw + x + ox; if (Sa[j] < 0.9) continue;
+    const t = T[y * tw + x], s = S[j];
+    st += t; ss += s; stt += t * t; sss += s * s; sts += t * s; n++;
+  }
+  if (n < tw * th * 0.8) return -1;
+  const cov = sts - st * ss / n, vt = stt - st * st / n, vs = sss - ss * ss / n;
+  return cov / Math.sqrt(vt * vs + 1e-9);
+}
+(async () => {
+  const tgt = await load('../' + tgtName), base = await load(`../chc/${set}_base.png`), pat = await load(`../chc/${set}_${exp}.png`);
+  async function search(k, sRange, rRange, guess) {
+    // k = downsample factor
+    const tw = Math.round(reg[2] / k), th = Math.round(reg[3] / k);
+    const T = grad(gray(tgt, tw, th, x => x.drawImage(tgt, reg[0], reg[1], reg[2], reg[3], 0, 0, tw, th)));
+    let best = { v: -2 };
+    for (let s = sRange[0]; s <= sRange[1] + 1e-9; s += sRange[2]) for (let r = rRange[0]; r <= rRange[1] + 1e-9; r += rRange[2]) {
+      const W = Math.ceil(base.width * s / k) + 40, H = Math.ceil(base.height * s / k) + 40;
+      // draw source (base+patch) rotated about its centre, scaled
+      const S = gray(base, W, H, x => {
+        x.translate(W / 2, H / 2); x.rotate(r * Math.PI / 180); x.scale(s / k, s / k); x.translate(-base.width / 2, -base.height / 2);
+        x.drawImage(base, 0, 0); x.drawImage(pat, 0, 0);
+      });
+      const Sg = grad(S);
+      let x0 = 0, x1 = W - tw, y0 = 0, y1 = H - th;
+      if (guess) { const gx = Math.round(W / 2 + (guess.ox - guess.W / 2) * guess.k / k), gy = Math.round(H / 2 + (guess.oy - guess.H / 2) * guess.k / k); const R = Math.ceil(3 * guess.k / k) + 2; x0 = Math.max(0, gx - R); x1 = Math.min(W - tw, gx + R); y0 = Math.max(0, gy - R); y1 = Math.min(H - th, gy + R); }
+      for (let oy = y0; oy <= y1; oy++) for (let ox = x0; ox <= x1; ox++) {
+        const v = ncc(T, tw, th, Sg, W, H, ox, oy, S.a);
+        if (v > best.v) best = { v, s, r, ox, oy, W, H, k };
+      }
+    }
+    return best;
+  }
+  const rmax = +(P.get('rmax') || 10);
+  let b = await search(8, [+(P.get('smin') || 0.45), +(P.get('smax') || 0.95), 0.025], [-rmax, rmax, 2.5]);
+  log('coarse ' + JSON.stringify(b));
+  b = await search(4, [b.s - 0.03, b.s + 0.03, 0.01], [b.r - 2.5, b.r + 2.5, 1], b);
+  log('mid ' + JSON.stringify(b));
+  b = await search(2, [b.s - 0.01, b.s + 0.01, 0.0025], [b.r - 1, b.r + 1, 0.25], b);
+  log('fine ' + JSON.stringify(b));
+  b = await search(1, [b.s - 0.003, b.s + 0.003, 0.001], [b.r - 0.25, b.r + 0.25, 0.125], b);
+  log('full ' + JSON.stringify(b));
+  // Convert to a canvas transform mapping src px -> target px:
+  // canvasPt = (W/2,H/2) + R*(s/k)*(p - c);  target = reg.xy + (canvasPt - (ox,oy))*k
+  const k = b.k, cx = base.width / 2, cy = base.height / 2, th = b.r * Math.PI / 180;
+  const a = Math.cos(th) * b.s, bb = Math.sin(th) * b.s;
+  const tx = reg[0] + (b.W / 2 - b.ox) * k - (a * cx - bb * cy), ty = reg[1] + (b.H / 2 - b.oy) * k - (bb * cx + a * cy);
+  const M = [a, bb, -bb, a, tx, ty];
+  log('MATRIX ' + JSON.stringify({ tgt: tgtName, set, ncc: b.v, m: M.map(v => +v.toFixed(4)) }));
+  window.RESULT = { tgt: tgtName, set, ncc: b.v, m: M };
+  // visual check: target with patch overlaid, and flicker diff
+  const c = document.createElement('canvas'); c.width = 600; c.height = 300; const x = c.getContext('2d');
+  const crop = [reg[0] - 60, reg[1] - 40, 300, 300];
+  x.drawImage(tgt, ...crop, 0, 0, 300, 300);
+  x.save(); x.beginPath(); x.rect(300, 0, 300, 300); x.clip();
+  x.translate(300, 0); x.translate(-crop[0], -crop[1]); x.drawImage(tgt, 0, 0); x.transform(...M); x.drawImage(pat, 0, 0); x.restore();
+  document.getElementById('out').append(c);
+  const c2 = document.createElement('canvas'); c2.width = 300; c2.height = 300; const x2 = c2.getContext('2d');
+  x2.drawImage(tgt, ...crop, 0, 0, 300, 300); x2.globalCompositeOperation = 'difference';
+  x2.translate(-crop[0], -crop[1]); x2.transform(...M); x2.drawImage(base, 0, 0); x2.drawImage(pat, 0, 0);
+  document.getElementById('out').append(c2);
+  document.title = 'done';
+})();
+</script>

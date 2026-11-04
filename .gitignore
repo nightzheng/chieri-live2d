@@ -1,0 +1,18 @@
+# 依赖、构建输出、本机工具 / dependencies, build output, local tools
+node_modules/
+/dist/
+/.tools/
+
+# 太大或不随仓库分发的东西 / too large, or not distributed with the repository
+/voice/Chieri_GPTSoVITS_20261103/
+/io/
+*.zip
+/video/
+/seq/
+/Live2D_两套动作流程/
+/tools/frames.html
+
+# 本机私有文件 / private local files
+/githubkey.txt
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock

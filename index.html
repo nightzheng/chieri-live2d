@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>千绘莉</title>
+<link rel="icon" href="img/emblem.png">
+<link rel="stylesheet" href="css/style.css">
+<script>if (/[?&]pet\b/.test(location.search)) document.documentElement.classList.add('pet');</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M9.5 18H17a4 4 0 0 0 4-4v-3a4 4 0 0 0-2.2-3.57L17.6 3.4l-3.3 3.5H9.7L6.4 3.4 5.2 7.43A4 4 0 0 0 3 11v3a4 4 0 0 0 4 4l-.8 3.2z"/><circle class="fl" cx="8.5" cy="12.5" r="1"/><circle class="fl" cx="12" cy="12.5" r="1"/><circle class="fl" cx="15.5" cy="12.5" r="1"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><ellipse class="fl" cx="12" cy="13.4" rx="2.1" ry="1.7"/><circle class="fl" cx="9.5" cy="11.2" r=".95"/><circle class="fl" cx="11.1" cy="9.6" r=".95"/><circle class="fl" cx="12.9" cy="9.6" r=".95"/><circle class="fl" cx="14.5" cy="11.2" r=".95"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle class="fl" cx="16" cy="6" r="2.3"/><circle class="fl" cx="9" cy="12" r="2.3"/><circle class="fl" cx="14" cy="18" r="2.3"/></symbol>
+  <symbol id="i-desk" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="11" rx="2"/><path d="M9 21h6M12 18v3"/><path d="M13.5 7V4.2l1.9 1.4h2.2l1.9-1.4V7"/><circle class="fl" cx="15.3" cy="9.4" r=".75"/><circle class="fl" cx="17.7" cy="9.4" r=".75"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18"/><path d="M5.5 7l1.2-3.2L9.5 7M14.5 7l2.8-3.2L18.5 7"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5c3.5 2.5 7.5 7.5 11 11M17.5 6.5c-3.5 2.5-7.5 7.5-11 11"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M3.5 11.4L20.5 4l-6.2 16.3-3.1-6.5z"/><path d="M11.2 13.8L20.5 4"/><path d="M7.2 16.2c-1.4 1.6-3 2-4.2 1.3"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><path d="M12 2.5v3.2M12 18.3v3.2M2.5 12h3.2M18.3 12h3.2M10.2 4.3L12 2.5l1.8 1.8M10.2 19.7l1.8 1.8 1.8-1.8M4.3 10.2L2.5 12l1.8 1.8M19.7 10.2l1.8 1.8-1.8 1.8"/><ellipse class="fl" cx="12" cy="13.3" rx="2.3" ry="1.9"/><circle class="fl" cx="9.4" cy="11" r="1"/><circle class="fl" cx="11.1" cy="9.4" r="1"/><circle class="fl" cx="12.9" cy="9.4" r="1"/><circle class="fl" cx="14.6" cy="11" r="1"/></symbol>
+  <symbol id="i-size" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><g class="fl"><ellipse cx="4.6" cy="13.4" rx="1.8" ry="1.5"/><circle cx="3" cy="11.2" r=".8"/><circle cx="4.6" cy="10.2" r=".8"/><circle cx="6.2" cy="11.2" r=".8"/>
+    <ellipse cx="12" cy="13.4" rx="1.8" ry="1.5"/><circle cx="10.4" cy="11.2" r=".8"/><circle cx="12" cy="10.2" r=".8"/><circle cx="13.6" cy="11.2" r=".8"/>
+    <ellipse cx="19.4" cy="13.4" rx="1.8" ry="1.5"/><circle cx="17.8" cy="11.2" r=".8"/><circle cx="19.4" cy="10.2" r=".8"/><circle cx="21" cy="11.2" r=".8"/></g></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/><path d="M5.6 7.6L5.4 3.6l3.1 2M18.4 7.6l.2-4-3.1 2"/></symbol>
+  <symbol id="i-anger" viewBox="0 0 24 24"><path d="M9 3.5v3.8A1.7 1.7 0 0 1 7.3 9H3.5M15 3.5v3.8A1.7 1.7 0 0 0 16.7 9h3.8M9 20.5v-3.8A1.7 1.7 0 0 0 7.3 15H3.5M15 20.5v-3.8a1.7 1.7 0 0 1 1.7-1.7h3.8"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+</svg>
+
+<div id="app">
+  <div id="bg"><div class="glow"></div></div>
+  <canvas id="under"></canvas>
+  <canvas id="stage"></canvas>
+  <canvas id="over"></canvas>
+  <div id="bubble" class="hidden"><span id="bubbleText"></span></div>
+
+  <header id="title">
+    <img class="emblem" src="img/emblem.png" alt="">
+    <div class="t1"><span class="name" id="charName">千绘莉</span><span class="tag">Live2D</span></div>
+    <div class="t2" id="hint">拽猫耳 · 摸摸头 · 戳脸蛋 · 拉尾巴 · 扯头发 · 双击跳跃</div>
+  </header>
+
+  <div id="meters" class="glass">
+    <div class="meter"><svg class="ic"><use href="#i-heart"/></svg><label>好感</label><div class="bar"><i id="mAff"></i></div></div>
+    <div class="meter anger"><svg class="ic"><use href="#i-anger"/></svg><label>不满</label><div class="bar"><i id="mAng"></i></div></div>
+  </div>
+
+  <nav id="dock" class="glass">
+    <button id="btnChat" title="对话"><svg><use href="#i-chat"/></svg></button>
+    <button id="btnPet" class="desk-only" title="桌面模式"><svg><use href="#i-desk"/></svg></button>
+    <button id="btnSettings" title="设置"><svg><use href="#i-gear"/></svg></button>
+    <button id="panelToggle" title="控制面板"><svg><use href="#i-panel"/></svg></button>
+  </nav>
+
+  <aside id="panel" class="glass deco">
+    <div class="tabs" role="tablist">
+      <button class="on" data-tab="play">互动</button><button data-tab="params">参数</button><button data-tab="view">显示</button>
+    </div>
+    <div class="tabpage on" data-page="play">
+      <h3>姿势</h3>
+      <div class="seg" id="poseBtns"></div>
+      <h3>表情</h3>
+      <div class="grid" id="exprBtns"></div>
+      <h3>动作</h3>
+      <div class="grid g3">
+        <button data-act="talk">说句话</button>
+        <button data-act="hop">跳一下</button>
+        <button data-act="twitch">抖耳朵</button>
+        <button data-act="swish">甩尾巴</button>
+        <button data-act="sleep">睡觉</button>
+        <button data-act="love">好感满</button>
+      </div>
+    </div>
+    <div class="tabpage" data-page="params">
+      <h3>参数 <button id="resetParams" class="mini">恢复自动</button></h3>
+      <div id="sliders"></div>
+    </div>
+    <div class="tabpage" data-page="view">
+      <h3>背景</h3>
+      <div class="seg s4" id="bgBtns">
+        <button data-bg="auto" title="白天是咖啡店的白天，晚上是夜晚">自动</button><button data-bg="day">白天</button><button data-bg="night">夜晚</button><button data-bg="plain">纯色</button>
+      </div>
+      <h3>显示</h3>
+      <label class="sw"><input type="checkbox" id="optFollow" checked><i></i>视线跟随鼠标</label>
+      <label class="sw"><input type="checkbox" id="optWind" checked><i></i>微风</label>
+      <label class="sw"><input type="checkbox" id="optIdle" checked><i></i>自动待机行为</label>
+      <label class="sw"><input type="checkbox" id="optMesh"><i></i>显示变形网格</label>
+      <label class="sw"><input type="checkbox" id="optRec"><i></i>录制模式（F8）</label>
+    </div>
+  </aside>
+
+  <section id="chat" class="glass deco hidden" aria-label="对话">
+    <img class="peek" src="img/peek_chat.png" alt="">
+    <header>
+      <div class="who"><span class="avatar"></span><div><b id="chatName">千绘莉</b><small id="chatStatus">在线</small></div></div>
+      <div class="acts">
+        <button id="chatClear" title="清空对话"><svg><use href="#i-trash"/></svg></button>
+        <button id="chatClose" title="收起"><svg><use href="#i-close"/></svg></button>
+      </div>
+    </header>
+    <div id="msgs"></div>
+    <form id="chatForm" autocomplete="off">
+      <button type="button" id="chatHide" class="x" title="收起（Esc）"><svg><use href="#i-close"/></svg></button>
+      <textarea id="chatInput" rows="1" placeholder="和她说点什么…（Enter 发送）"></textarea>
+      <button type="submit" title="发送"><svg><use href="#i-send"/></svg></button>
+    </form>
+  </section>
+
+  <div id="petdot" class="glass"><svg><use href="#i-more"/></svg></div>
+  <div id="petbar" class="glass">
+    <span class="grip" id="petGrip" title="按住菜单拖动，带她去别处"><svg><use href="#i-grip"/></svg></span>
+    <button id="petChat" title="对话"><svg><use href="#i-chat"/></svg></button>
+    <button id="petSize" title="调整大小"><svg><use href="#i-size"/></svg></button>
+    <button id="petSettings" title="设置"><svg><use href="#i-gear"/></svg></button>
+    <button id="petHome" title="回到主窗口"><svg><use href="#i-home"/></svg></button>
+    <button id="petMore" title="更多"><svg><use href="#i-more"/></svg></button>
+  </div>
+
+  <div id="sizer" aria-label="调整大小">
+    <div class="frame"></div>
+    <span class="handle" title="拖动这个角调整大小"></span>
+    <div class="ctl glass">
+      <button data-k="-1" title="缩小">−</button><b id="sizerVal">100%</b><button data-k="1" title="放大">+</button>
+      <button id="sizerDone" class="done">完成</button>
+    </div>
+  </div>
+
+  <div id="settings" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="sheet glass deco">
+      <img class="peek" src="img/peek_settings.png" alt="">
+      <header><h2 id="setTitle">设置</h2><button class="x" data-close title="关闭"><svg><use href="#i-close"/></svg></button></header>
+      <div class="body">
+        <fieldset>
+          <legend>AI 服务</legend>
+          <label class="f"><span>服务商</span><select id="sPreset"></select></label>
+          <label class="f"><span>接口地址</span><input id="sBase" placeholder="https://api.example.com/v1"></label>
+          <label class="f"><span>API Key</span><span class="pw"><input id="sKey" type="password" placeholder="sk-…"><button type="button" id="sKeyShow" class="mini">显示</button></span></label>
+          <label class="f"><span>模型</span><input id="sModel" placeholder="模型名称"></label>
+          <div class="f"><span></span><span class="row2"><button type="button" id="sTest" class="btn">测试连接</button><small id="sTestOut"></small></span></div>
+          <p class="note" id="sNote"></p>
+        </fieldset>
+        <fieldset>
+          <legend>角色</legend>
+          <label class="f"><span>名字</span><input id="sName" maxlength="12"></label>
+          <label class="f top"><span>人设</span><textarea id="sPersona" rows="8"></textarea></label>
+          <label class="f"><span>睡觉</span><select id="sSleep">
+            <option value="60">鼠标 1 分钟不动后犯困入睡</option>
+            <option value="180">鼠标 3 分钟不动后犯困入睡</option>
+            <option value="300">鼠标 5 分钟不动后犯困入睡</option>
+            <option value="600">鼠标 10 分钟不动后犯困入睡</option>
+            <option value="0">从不睡觉</option>
+          </select></label>
+          <label class="sw"><input type="checkbox" id="sAiChat"><i></i>用 AI 和她对话</label>
+          <label class="sw"><input type="checkbox" id="sAiReact"><i></i>用 AI 生成触摸反应（代替固定台词）</label>
+          <label class="sw"><input type="checkbox" id="sBubbleOnly"><i></i>隐藏聊天栏（只留输入框，她的回复只显示在气泡里）</label>
+        </fieldset>
+        <fieldset>
+          <legend>语音</legend>
+          <label class="f"><span>语音引擎</span><select id="vEngine"></select></label>
+          <div id="vFields"></div>
+          <div id="vChieri" class="hidden">
+            <div class="f"><span>运行环境</span><span class="row2"><small id="vEnv">检测中…</small></span></div>
+            <label class="f"><span>Python</span><span class="pw"><input id="vPy" placeholder="留空 = 使用一键安装的环境"><button type="button" id="vPyPick" class="mini">浏览</button></span></label>
+            <label class="f"><span>运行设备</span><select id="vDevice">
+              <option value="auto">自动（有 NVIDIA 显卡就用显卡）</option>
+              <option value="cuda">NVIDIA 显卡（CUDA）</option>
+              <option value="cpu">CPU（很慢）</option>
+            </select></label>
+            <div class="f"><span></span><span class="row2 wrap">
+              <button type="button" id="vSetup" class="mini">一键安装环境</button>
+              <button type="button" id="vCheck" class="mini">检测环境</button>
+              <button type="button" id="vStart" class="mini">加载 / 重启模型</button>
+              <label class="chk"><input type="checkbox" id="vMirror">使用国内镜像</label>
+            </span></div>
+            <div class="f top hidden" id="vProg"><span>安装进度</span><div class="prog">
+              <div class="ptop"><b id="vProgStep"></b><em id="vProgPct"></em></div>
+              <div class="pbar"><i></i></div>
+              <small id="vProgText"></small>
+            </div></div>
+            <pre id="vLog" class="hidden"></pre>
+            <p class="note credit">感谢模型提供者，B站id：雪村落雪提供的模型</p>
+          </div>
+          <label class="f"><span>音量</span><span class="row2"><input id="vVol" type="range" min="0" max="1" step="0.01"><small id="vVolOut"></small></span></label>
+          <label class="sw"><input type="checkbox" id="vChat"><i></i>朗读聊天回复</label>
+          <label class="sw"><input type="checkbox" id="vReact"><i></i>朗读触摸反应和日常台词</label>
+          <div class="f"><span></span><span class="row2"><button type="button" id="vTest" class="btn">试听</button><small id="vTestOut"></small></span></div>
+          <div class="f desk-only"><span></span><span class="row2"><button type="button" id="vPregen" class="btn">预生成固定台词</button><small id="vPregenOut">提前合成全部固定台词并缓存，反应时立刻出声</small></span></div>
+          <p class="note" id="vNote"></p>
+        </fieldset>
+        <fieldset class="desk-only">
+          <legend>桌面宠物</legend>
+          <label class="f"><span>显示层级</span><select id="sLevel">
+            <option value="top">最前（盖过全屏程序和任务栏）</option>
+            <option value="floating">置顶（在普通窗口上面）</option>
+            <option value="normal">普通（和其他窗口一样）</option>
+          </select></label>
+          <label class="f"><span>大小</span><span class="row2"><input id="sScale" type="range" min="0.4" max="2.5" step="0.01"><small id="sScaleOut"></small></span></label>
+          <label class="sw"><input type="checkbox" id="sClick"><i></i>鼠标穿透（完全不挡操作，从托盘图标关闭）</label>
+          <label class="sw"><input type="checkbox" id="sStartPet"><i></i>启动时直接进入桌面模式</label>
+          <label class="sw"><input type="checkbox" id="sAutoStart"><i></i>开机自动启动（按上一项打开桌面宠物或主窗口）</label>
+          <p class="note hidden" id="sAutoNote"></p>
+        </fieldset>
+      </div>
+      <footer><button class="btn ghost" data-close>取消</button><button class="btn primary" id="sSave">保存</button></footer>
+    </div>
+  </div>
+
+  <aside id="recHud" class="glass deco hidden" aria-label="录制模式快捷键">
+    <header><b>录制模式</b><small>F8 退出</small></header>
+    <div id="recKeys"></div>
+    <p>她不会自己乱动，台词固定为分镜里那句。</p>
+    <p class="desk-only">别的窗口在前台时，按 Ctrl+Alt+同一个键。</p>
+  </aside>
+
+  <div id="toast"><img alt=""><span></span></div>
+  <div id="loading"><img class="chibi" src="img/loading.png" alt=""><div id="loadText">正在烘焙表情差分</div></div>
+</div>
+<script src="js/config.js"></script>
+<script src="js/lines_ja.js"></script>
+<script src="js/rig.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/app.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

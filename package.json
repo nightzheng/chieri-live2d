@@ -1,0 +1,70 @@
+{
+  "name": "nekomimi-pet",
+  "productName": "千绘莉",
+  "version": "1.2.7",
+  "description": "雪村千绘莉 · Live2D 风格的猫耳少女桌面宠物",
+  "author": "lizitcxyz",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --config build/full.config.js",
+    "dist:lite": "electron-builder --win nsis --config build/lite.config.js"
+  },
+  "build": {
+    "appId": "com.lizitcxyz.nekomimi",
+    "productName": "千绘莉",
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "45.2.1",
+    "compression": "maximum",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "index.html",
+      "css/**",
+      "js/**",
+      "chc/**",
+      "img/**",
+      "1.png",
+      "2.png",
+      "build/icon.png",
+      "build/tray.png",
+      "build/tray@2x.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "千绘莉",
+      "artifactName": "千绘莉-Setup-${version}.exe",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "include": "build/installer.nsh",
+      "installerLanguages": ["zh_CN"],
+      "language": "2052",
+      "runAfterFinish": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  }
+}

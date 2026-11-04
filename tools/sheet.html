@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#888;font:11px sans-serif">
+<div id="g" style="display:flex;flex-wrap:wrap;gap:2px"></div>
+<script>
+const p = new URLSearchParams(location.search);
+const set = p.get('set') || 'chi12A';
+const ids = (p.get('ids')||'001,001a,101,101a,102,103,104,104a,201,201a,301,301a,401,401a,402,402a,501,502,503,504,601,601a,701,701a,702,702a,703,704,704a,705,705a,901,902').split(',');
+const crop = (p.get('crop')||'250,180,400,330').split(',').map(Number);
+const S = +(p.get('s')||0.55);
+(async()=>{
+  const load = s=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=s});
+  const base = await load(`../chc/${set}_base.png`);
+  for (const id of ids){
+    const im = await load(`../chc/${set}_${id}.png`); if(!im) continue;
+    const c = document.createElement('canvas'); c.width=crop[2]*S; c.height=crop[3]*S;
+    const x=c.getContext('2d'); x.scale(S,S); x.translate(-crop[0],-crop[1]);
+    x.drawImage(base,0,0); x.drawImage(im,0,0);
+    const d=document.createElement('div'); d.append(c, document.createElement('br'), id); document.getElementById('g').append(d);
+  }
+})();
+</script>
