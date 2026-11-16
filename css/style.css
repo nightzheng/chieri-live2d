@@ -340,3 +340,11 @@ html.pet.resizing #sizer { display: block; position: absolute; inset: 0; z-index
 .data-list article { border-bottom: 1px solid var(--line); padding: 7px 0; overflow-wrap: anywhere; }
 .data-list p { margin: 4px 0; white-space: pre-wrap; }
 .data-list small { color: var(--ink3); }
+#visionIndicator { position: absolute; top: 14px; left: 14px; z-index: 9; display: flex; align-items: center;
+  gap: 8px; padding: 6px 10px; border-radius: 10px; color: var(--ink); font-size: 12px; }
+html.pet #visionIndicator { top: 44px; left: auto; right: 10px; }
+#visImage { max-width: 100%; max-height: 240px; margin: 8px 0; border-radius: 8px; }
+#visResult { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 13px; }
+#agendaSettings details, #visionSettings details { margin-top: 12px; }
+.settings-sections { padding: 0 12px 6px; }
+.settings-sections .mini { margin: 2px; }

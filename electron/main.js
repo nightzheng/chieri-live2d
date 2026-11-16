@@ -141,6 +141,8 @@ function petMenu() {
   return [
     { label: '打开对话', enabled: !!pet, click: () => pet && pet.webContents.send('cmd', 'chat') },
     { label: '设置…', enabled: !!pet, click: () => pet && pet.webContents.send('cmd', 'settings') },
+    { label: '暂停主动互动', click: () => { try { companion?.pause(); broadcast(); } catch (_) {} } },
+    { label: '停止屏幕观察', click: () => stopVision?.() },
     { type: 'separator' },
     { label: '显示层级', submenu: Object.entries(LEVELS).map(([k, label]) => ({ label, type: 'radio', checked: p.level === k, click: () => set({ level: k }) })) },
     { label: `大小（${Math.round((p.scale || 1) * 100)}%）`, submenu: [
@@ -188,14 +190,21 @@ ipcMain.handle('settings:set', (_, s) => {
   saveSettings(); applyPet(); recShortcuts(); tray && tray.setToolTip(settings.name || '千绘莉'); return true;
 });
 // AI calls go out from here: no CORS in the way, and the key never leaves this machine except to the endpoint
-let addMemoryContext;
+let addMemoryContext, companion, stopVision;
 const ownedWindow = sender => [studio, pet].find(w => w && !w.isDestroyed() && w.webContents === sender);
+function trustedWindow(event) {
+  const frame = event.senderFrame;
+  return frame === event.sender.mainFrame && frame?.url.split('?')[0] === 'app://local/index.html'
+    ? ownedWindow(event.sender) : undefined;
+}
 ipcMain.handle('ai:request', async (event, r) => {
   try {
     const u = new URL(r.url); if (!/^https?:$/.test(u.protocol)) throw new Error('只支持 http(s) 地址');
-    const frame = event.senderFrame;
-    const body = r.memory === true && ownedWindow(event.sender) && frame === event.sender.mainFrame &&
-      frame?.url.split('?')[0] === 'app://local/index.html' ? addMemoryContext(r.body) : r.body;
+    const win = trustedWindow(event);
+    const ticket = r.proactive && companion?.useTicket(win, r.proactive);
+    if (r.proactive && !ticket) throw new Error('主动互动已暂停');
+    const body = ticket?.memory ? addMemoryContext(r.body, true) :
+      r.memory === true && win && !ticket ? addMemoryContext(r.body) : r.body;
     const res = await fetch(u, { method: 'POST', headers: r.headers, body, signal: AbortSignal.timeout(r.timeout || 30000) });
     return { ok: res.ok, status: res.status, text: await res.text() };
   } catch (e) { return { ok: false, error: e.name === 'TimeoutError' ? '请求超时' : e.message }; }
@@ -254,7 +263,10 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   loadSettings();
-  addMemoryContext = require('./memory-ipc')(ownedWindow, ROOT);
+  const memory = require('./memory-ipc')(ownedWindow, ROOT);
+  addMemoryContext = memory.addMemoryContext;
+  companion = require('./companion-ipc')({ store: memory.store, trustedWindow, activeWindow: () => pet || studio, settings: () => settings });
+  stopVision = require('./vision-ipc')(trustedWindow, () => pet || studio);
   recShortcuts();
   buildTray();
   setInterval(pollCursor, 33);

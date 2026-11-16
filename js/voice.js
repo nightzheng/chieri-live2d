@@ -72,7 +72,7 @@ function mergeTts(t) {
 
 const Voice = {
   caps: { desktop: false, local: false, envReady: false },
-  playing: false, lvl: 0,
+  playing: false, pending: 0, currentKind: '', lvl: 0,
   seq: 0,                  // the line being spoken: audio that arrives for an older one is dropped
   ctx: null, gain: null, an: null, src: null, buf: null,
   ready: new Map(),        // text -> pending audio made by prepare()
@@ -102,7 +102,7 @@ const Voice = {
   cfg() { return Store.data.tts; },
   allowed(e) { return !!TTS_ENGINES[e] && (!TTS_ENGINES[e].local || this.caps.local); },
   engine() { const e = this.cfg().engine; return this.allowed(e) ? e : 'off'; },
-  on(kind) { return this.engine() !== 'off' && !!this.cfg()[kind === 'chat' ? 'chat' : 'react']; },
+  on(kind) { return this.engine() !== 'off' && (kind === 'reminder' || kind === 'proactive' || !!this.cfg()[kind === 'chat' ? 'chat' : 'react']); },
   wantsJa() { const e = this.engine(); return e === 'chieri' || (e !== 'off' && this.cfg()[e].lang === 'ja'); },
   jaName() { const n = Store.data.name; return n === '千绘莉' ? 'ちえり' : n; },
   // what is actually said: no (stage directions), no decorations
@@ -116,11 +116,13 @@ const Voice = {
     if (!this.on(opt.kind)) return false;
     const id = ++this.seq, t0 = performance.now(), wait = opt.kind === 'chat' ? 40000 : 15000;
     this.stop();
+    this.currentKind = opt.kind || 'react';
     const p = this.ready.get(text) || this.make(text, opt).catch(e => this.fail(e));
     this.ready.delete(text);
     p.then(buf => { if (buf && id === this.seq && performance.now() - t0 < wait) this.play(buf); });
     return true;
   },
+  interrupt() { this.seq++; this.stop(); this.currentKind = ''; },
   // start making the audio of a line about to be said, so text and voice can appear together;
   // resolves when it is ready or after `timeout` ms, whichever comes first
   prepare(text, opt = {}, timeout = 8000) {
@@ -132,11 +134,14 @@ const Voice = {
   },
   // text -> decoded AudioBuffer (null when there is nothing to say); throws on failure
   async make(text, opt = {}) {
-    const eng = this.engine();
-    const words = this.wantsJa() ? await this.toJa(text, opt.ja) : this.spoken(text);
-    if (!words || eng === 'off') return null;
-    const bytes = await this.synth(eng, words, opt);
-    return bytes ? this.decode(bytes) : null;
+    this.pending++;
+    try {
+      const eng = this.engine();
+      const words = this.wantsJa() ? await this.toJa(text, opt.ja) : this.spoken(text);
+      if (!words || eng === 'off') return null;
+      const bytes = await this.synth(eng, words, opt);
+      return bytes ? await this.decode(bytes) : null;
+    } finally { this.pending--; }
   },
 
   async toJa(text, ja) {

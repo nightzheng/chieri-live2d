@@ -47,7 +47,7 @@ module.exports = function registerMemory(ownsWindow, root) {
       if (!options.enabled) lastUsed = [];
       return options;
     },
-    list: (_, a) => store.list(a?.query, a?.state, a?.offset),
+    list: (_, a) => store.list(a?.query, a?.state, a?.offset, a?.type),
     save: (_, a) => {
       const id = store.save(a);
       lastUsed = [];
@@ -92,7 +92,7 @@ module.exports = function registerMemory(ownsWindow, root) {
       if (!file) return;
       const dir = store.status().error ? await pickDirectory(w) : undefined;
       if (store.status().error && !dir) return;
-      if (await confirm(w, '恢复备份中的记忆和聊天？', '目标文件夹内原有的库会保存在 retained 文件夹内。')) {
+      if (await confirm(w, '恢复备份中的记忆、聊天和提醒？', '目标文件夹内原有的库会保存在 retained 文件夹内。')) {
         lastUsed = [];
         return store.restore(file, dir);
       }
@@ -133,7 +133,7 @@ module.exports = function registerMemory(ownsWindow, root) {
     finally { dialogOpen = false; }
   });
   app.on('will-quit', () => store.close());
-  return function addMemoryContext(body) {
+  function addMemoryContext(body, suggested = false) {
     lastUsed = [];
     if (!options.enabled) return body;
     const payload = JSON.parse(body);
@@ -141,7 +141,9 @@ module.exports = function registerMemory(ownsWindow, root) {
     if (message?.role !== 'user') return body;
     try {
       let remaining = 1400;
-      for (const row of store.search(message.content)) {
+      const rows = suggested ? store.list().filter(row => row.confidence >= 0.75 && ['兴趣', '偏好', '事项'].includes(row.type))
+        .slice(0, 2).map(row => ({ ...row, content: row.content.slice(0, 200) })) : store.search(message.content);
+      for (const row of rows) {
         const cost = Buffer.byteLength(JSON.stringify({ content: row.content, type: row.type })) + 2;
         if (cost > remaining) continue;
         lastUsed.push(row);
@@ -155,5 +157,6 @@ module.exports = function registerMemory(ownsWindow, root) {
     else if (payload.messages[0]?.role === 'system') payload.messages[0].content += context;
     else { lastUsed = []; return body; }
     return JSON.stringify(payload);
-  };
+  }
+  return { store, addMemoryContext };
 };

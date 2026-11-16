@@ -99,7 +99,7 @@ const AI_ACTIONS = { none: '无', hop: '开心地跳一下', swish: '甩尾巴',
 
 const AI = {
   history: [],            // [{role:'user'|'assistant', content}]
-  busy: false, lastAt: 0, seq: 0,
+  busy: false, interacting: 0, lastAt: 0, seq: 0,
   ready() { const s = Store.data; return !!(s.model && s.baseUrl && (s.apiKey || /localhost|127\.0\.0\.1/.test(s.baseUrl))); },
 
   systemPrompt(state) {
@@ -144,7 +144,7 @@ ${s.persona}
     return t.trim().replace(/^[「"']+|[」"']+$/g, '');
   },
   // system prompt + messages -> the model's text
-  async complete(sys, msgs, { timeout = 20000, maxTokens = 500, temperature = 0.9, memory = false } = {}) {
+  async complete(sys, msgs, { timeout = 20000, maxTokens = 500, temperature = 0.9, memory = false, proactive } = {}) {
     const s = Store.data;
     let req;
     if (s.kind === 'anthropic') {
@@ -156,7 +156,7 @@ ${s.persona}
       req = { url: s.baseUrl.replace(/\/+$/, '') + '/chat/completions', headers,
         body: { model: s.model, max_tokens: maxTokens, temperature, messages: [{ role: 'system', content: sys }, ...msgs] } };
     }
-    const res = await this.post(req, timeout, memory);
+    const res = await this.post(req, timeout, memory, proactive);
     if (s.kind === 'anthropic') {
       if (res.stop_reason === 'refusal') throw new Error('模型拒绝了这次请求');
       return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
@@ -164,9 +164,9 @@ ${s.persona}
     return res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content || '';
   },
 
-  async post(req, timeout, memory) {
+  async post(req, timeout, memory, proactive) {
     if (window.petAPI) {
-      const r = await window.petAPI.aiRequest({ url: req.url, headers: req.headers, body: JSON.stringify(req.body), timeout, memory });
+      const r = await window.petAPI.aiRequest({ url: req.url, headers: req.headers, body: JSON.stringify(req.body), timeout, memory, proactive });
       if (!r.ok) throw new Error(r.error || `HTTP ${r.status}: ${String(r.text || '').slice(0, 200)}`);
       return JSON.parse(r.text);
     }

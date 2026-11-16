@@ -6,7 +6,8 @@ const { randomUUID, createHash } = require('node:crypto');
 
 const FILE = 'memory.sqlite';
 const APP_ID = 0x43484d45;
-const VERSION = 1;
+const VERSION = 2;
+const { SCHEMA: AGENDA_SCHEMA } = require('./agenda');
 const MAX_TEXT = 4000;
 const TYPES = ['事实', '偏好', '兴趣', '事项', '约定', '关系', '其他'];
 const SOURCES = ['manual', 'explicit', 'candidate', 'import'];
@@ -60,9 +61,17 @@ function readVersion(db, pragma) {
 }
 
 function verify(db) {
-  if (readVersion(db, 'PRAGMA application_id') !== APP_ID || readVersion(db, 'PRAGMA user_version') !== VERSION ||
+  const version = readVersion(db, 'PRAGMA user_version');
+  if (readVersion(db, 'PRAGMA application_id') !== APP_ID || version < 1 || version > VERSION ||
       readVersion(db, 'PRAGMA integrity_check') !== 'ok') throw new Error('数据库损坏或版本不受支持');
   if (!db.prepare("SELECT value FROM metadata WHERE key='lineage'").get()?.value) throw new Error('缺少数据库标识');
+  if (version >= 2) {
+    db.prepare('SELECT id FROM reminders LIMIT 1').get();
+    db.prepare('SELECT id FROM reminder_events LIMIT 1').get();
+    db.prepare('SELECT key FROM proactive LIMIT 1').get();
+    if (db.prepare('PRAGMA foreign_key_check').get()) throw new Error('提醒数据库引用无效');
+  }
+  return version;
 }
 
 function openDatabase(file, create = false) {
@@ -89,11 +98,13 @@ function openDatabase(file, create = false) {
         CREATE UNIQUE INDEX memories_unique ON memories(normalized) WHERE archived=0;
         CREATE INDEX memories_fact ON memories(fact_key) WHERE archived=0;
         CREATE INDEX memories_recent ON memories(archived, updated DESC, id);
-        PRAGMA user_version=${VERSION};
+        PRAGMA user_version=1;
       `);
       db.prepare('INSERT INTO metadata VALUES (?, ?)').run('lineage', randomUUID());
     });
-    verify(db);
+    const version = verify(db);
+    if (version === 1) transaction(db, () => db.exec(AGENDA_SCHEMA + 'PRAGMA user_version=2'));
+    db.exec('PRAGMA foreign_keys=ON');
     if (readVersion(db, 'PRAGMA journal_mode=WAL') !== 'wal') throw new Error('数据库无法启用 WAL');
     db.exec('PRAGMA synchronous=FULL; BEGIN IMMEDIATE; ROLLBACK');
     return db;
@@ -105,8 +116,13 @@ function openDatabase(file, create = false) {
 
 function digest(db) {
   const hash = createHash('sha256');
-  for (const query of ['SELECT * FROM messages ORDER BY id', 'SELECT * FROM memories ORDER BY id', 'SELECT * FROM metadata ORDER BY key']) {
-    for (const row of db.prepare(query).iterate()) hash.update(JSON.stringify(row) + '\n');
+  const version = readVersion(db, 'PRAGMA user_version');
+  const tables = [['messages', 'id'], ['memories', 'id'], ['metadata', 'key']];
+  if (version >= 2) tables.push(['reminders', 'id'], ['reminder_events', 'id'], ['proactive', 'key']);
+  hash.update(String(version));
+  for (const [table, key] of tables) {
+    hash.update(table);
+    for (const row of db.prepare(`SELECT * FROM ${table} ORDER BY ${key}`).iterate()) hash.update(JSON.stringify(row) + '\n');
   }
   return hash.digest('hex');
 }
@@ -394,12 +410,14 @@ class MemoryStore {
   clearHistory() { this.open().exec('DELETE FROM messages'); }
   clearMemories() { this.open().exec('DELETE FROM memories'); }
 
-  list(query = '', state = 'active', offset = 0) {
-    if (!['active', 'archived'].includes(state) || !Number.isSafeInteger(offset) || offset < 0) throw new Error('筛选参数无效');
+  list(query = '', state = 'active', offset = 0, type = '') {
+    if (!['active', 'archived'].includes(state) || !Number.isSafeInteger(offset) || offset < 0 ||
+        (type !== '' && !TYPES.includes(type))) throw new Error('筛选参数无效');
     inputText(query, 200, true);
     return this.open().prepare(`SELECT * FROM memories WHERE archived=?
+      AND (? = '' OR type = ?)
       AND instr(lower(content || ' ' || tags || ' ' || type), lower(?)) > 0 ORDER BY updated DESC, id LIMIT 40 OFFSET ?`)
-      .all(Number(state === 'archived'), query, offset);
+      .all(Number(state === 'archived'), type, type, query, offset);
   }
 
   save(value, source = 'manual', confidence = 1) {

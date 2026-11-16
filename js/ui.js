@@ -99,10 +99,24 @@ const Chat = {
     finally { this.sending = false; button.disabled = false; }
   },
   async respond(text) {
+    if (DESKTOP && VisionUI.handleChat(text)) return;
     const conversation = DESKTOP ? crypto.randomUUID() : null;
     touch(); this.add('user', text);
     await this.persist('user', text, conversation);
-    if (DESKTOP) await MemoryUI.propose(text);
+    if (DESKTOP) {
+      try {
+        const reminder = await CompanionUI.call('schedule', text);
+        if (reminder) {
+          if (reminder === 'saved') this.card('happy', '提醒已保存。', ['查看提醒', () => CompanionUI.showAgenda()]);
+          return;
+        }
+      } catch (e) {
+        this.card('pout', e.message.includes('提醒时间已过') ? '提醒时间已过，请选择未来时间。' :
+          '保存提醒失败。请在「提醒与日程」检查时间和数据库。');
+        return;
+      }
+      await MemoryUI.propose(text);
+    }
     S.look = { x: PET ? 0 : -0.35, y: 0.5, until: S.t + 2 };
     if (!Store.data.aiChat || !AI.ready()) {
       const r = localReply(text);
@@ -169,7 +183,7 @@ const Settings = {
     $('#sLevel').value = s.pet.level; $('#sScale').value = s.pet.scale; $('#sClick').checked = s.pet.clickThrough; $('#sStartPet').checked = !!s.pet.startAsPet;
     $('#sScaleOut').textContent = Math.round(s.pet.scale * 100) + '%';
     $('#sTestOut').textContent = ''; $('#sTestOut').className = '';
-    if (DESKTOP) { this.autoStart(); MemoryUI.open(); }
+    if (DESKTOP) { this.autoStart(); MemoryUI.open(); CompanionUI.open(); VisionUI.open(); }
     VoiceUI.open();
     this.note(); $('#settings').classList.remove('hidden'); petSide();
   },
@@ -188,6 +202,7 @@ const Settings = {
   },
   close() {
     if ($('#settings').classList.contains('hidden')) return;
+    if (DESKTOP && VisionUI.token) VisionUI.stop();
     $('#settings').classList.add('hidden'); petSide();
     if (PET && DESKTOP) window.petAPI.setScale(Store.data.pet.scale);   // undo a slider left unsaved
   },
@@ -415,7 +430,7 @@ const Sizer = {
 function initPet() {
   let ignoring = null, hoverT = 0;
   const root = document.documentElement, bar = $('#petbar'), dot = $('#petdot');
-  const overUI = el => el && el.closest && el.closest('#chat, #settings, #bubble');
+  const overUI = el => el && el.closest && el.closest('#chat, #settings, #bubble, #visionIndicator');
   const setIgnore = v => { if (v !== ignoring) { ignoring = v; window.petAPI.setIgnoreMouse(v); } };
   // the menu opens only with the mouse on it: on the dot while collapsed, on the bar once open
   const over = (el, m, x, y) => { const r = el.getBoundingClientRect(); return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m; };
@@ -479,6 +494,9 @@ function initUI() {
   });
   inp.addEventListener('input', () => { inp.style.height = ''; inp.style.height = Math.min(96, inp.scrollHeight) + 'px'; });
   document.querySelectorAll('#settings [data-close]').forEach(b => b.onclick = () => Settings.close());
+  document.querySelectorAll('#settings [data-section]').forEach(b => b.onclick = () => {
+    document.getElementById(b.dataset.section).scrollIntoView({ block: 'start' });
+  });
   $('#settings').addEventListener('pointerdown', e => { if (e.target.id === 'settings') Settings.close(); });
   $('#sSave').onclick = () => Settings.save();
   $('#sTest').onclick = () => Settings.test();
@@ -491,6 +509,8 @@ function initUI() {
   window.addEventListener('keydown', e => { if (e.key === 'Escape') Settings.close(); });
   VoiceUI.init();
   MemoryUI.init();
+  CompanionUI.init();
+  VisionUI.init();
   Chat.sending = true;
   Chat.restore().finally(() => { Chat.sending = false; });
   initRec();

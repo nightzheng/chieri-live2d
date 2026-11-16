@@ -676,7 +676,7 @@ function say(text, sem, dur, opt = {}) {
   S.talkUntil = S.t + text.replace(/[…～♪！？\s.]/g, '').length * 0.055 + 0.15;
   bubbleHide = S.t + Math.max(2.4, text.length * 0.16 + 1.2);
   // spoken aloud: once the audio plays her mouth follows it instead of the typing
-  Voice.speak(text, opt);
+  if (opt.voice !== false) Voice.speak(text, opt);
 }
 // "…" while she thinks of an answer
 function think(sec = 25) {
@@ -695,10 +695,12 @@ function line(key, sem, dur) {
   AI.lastAt = S.t;
   if (sem) setFace(sem, dur || 6);
   think();
-  AI.ask(`[互动] 对方${desc}。`, aiState())
+  AI.interacting++;
+  AI.ask(`[互动] 对方${desc}。`, aiState(), { remember: false })
     // with a voice, the words wait (still "…") until the audio is ready, so both come together
     .then(async o => { if (id !== AI.seq) return; await Voice.prepare(o.reply, { ja: o.ja }, 6000); if (id === AI.seq) applyAI(o, sem, dur, false); })
-    .catch(e => { if (id !== AI.seq) return; say(pickLine(LINES[key]), sem, dur); aiFailed(e); });
+    .catch(e => { if (id !== AI.seq) return; say(pickLine(LINES[key]), sem, dur); aiFailed(e); })
+    .finally(() => { AI.interacting--; });
 }
 // in recording mode every reaction says the first line of its list, so takes match the storyboard
 const pickLine = a => Rec.on ? a[0] : pick(a);
@@ -809,6 +811,7 @@ function hitTest(x, y) {
 //  Behaviour / reactions
 // ============================================================================
 function touch() {
+  CompanionUI.activity();
   S.lastInput = S.t;
   if (S.sleep > 0) wake();
 }

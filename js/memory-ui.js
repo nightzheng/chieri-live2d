@@ -79,7 +79,7 @@ const MemoryUI = {
     if (row) $('#mContent').focus();
   },
   async list() {
-    const rows = await this.request('list', { query: $('#mQuery').value, state: $('#mFilter').value, offset: this.offset });
+    const rows = await this.request('list', { query: $('#mQuery').value, state: $('#mFilter').value, type: $('#mTypeFilter').value, offset: this.offset });
     $('#mPrev').disabled = this.offset === 0;
     $('#mNext').disabled = rows.length < 40;
     $('#mList').replaceChildren(...rows.map(row => this.row(row.content,
@@ -116,13 +116,13 @@ const MemoryUI = {
       await this.request('options', { enabled: $('#mEnabled').checked, auto: $('#mAuto').checked });
       await this.refresh();
     });
-    $('#mSearch').onclick = $('#mFilter').onchange = () => this.run(async () => { this.offset = 0; await this.list(); });
+    $('#mSearch').onclick = $('#mFilter').onchange = $('#mTypeFilter').onchange = () => this.run(async () => { this.offset = 0; await this.list(); });
     $('#mPrev').onclick = () => this.run(async () => { this.offset = Math.max(0, this.offset - 40); await this.list(); });
     $('#mNext').onclick = () => this.run(async () => { this.offset += 40; await this.list(); });
     $('#mCancel').onclick = () => this.edit();
     $('#mSave').onclick = () => this.run(async () => {
       await this.request('save', { id: this.id, content: $('#mContent').value, type: $('#mType').value, tags: $('#mTags').value });
-      this.edit(); this.offset = 0; $('#mFilter').value = 'active';
+      this.edit(); this.offset = 0; $('#mFilter').value = 'active'; $('#mTypeFilter').value = '';
       await this.refresh();
       $('#mFeedback').textContent = '记忆已保存';
     });
