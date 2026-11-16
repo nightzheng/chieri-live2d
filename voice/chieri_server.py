@@ -4,8 +4,7 @@ Loads the Chieri GPT-SoVITS weights (v2ProPlus, provided by 雪村落雪 on Bili
 version from the SoVITS file's header) from the model package next to this file once, then answers
 POST /tts {"text": "<Japanese>"} with a 16-bit WAV (GET /health for a status check). It listens on
 127.0.0.1 only, prints one line "CHIERI_READY {json}" when it can take requests (with short hashes of
-the weights it loaded), and exits as soon as the app that started it (electron/voice.js, which passes
-its process id as --parent) is gone, also while it is still loading. Loading stages go to stderr; one
+the weights it loaded), and exits when the owning app closes its private input pipe, including while loading. Loading stages go to stderr; one
 that runs longer than STALL seconds also gets a stack dump of where it is (and again every STALL).
 
 Synthesis follows the package's README / scripts/speak.py: reference audio + text from delivery/,
@@ -79,32 +78,28 @@ def skip_web_ui():
     sys.modules['gradio'] = stub
 
 
-def watch_parent(pid):
-    """Exit once the app is gone: a server left running would hold GPU memory and files in the install folder.
-    (Not by waiting for stdin to close: on Windows a thread blocked reading a pipe stalls every child process
-    that inherits the pipe, at its start-up, and GPT-SoVITS may start ffmpeg.)"""
+def watch_stdin():
+    """Stop on EOF of the launching app's pipe, including after a crash."""
     if os.name == 'nt':
         import ctypes
+        import msvcrt
         from ctypes import wintypes
-        k32 = ctypes.WinDLL('kernel32', use_last_error=True)
-        k32.OpenProcess.restype = wintypes.HANDLE
-        k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-        k32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-        handle = k32.OpenProcess(0x00100000, False, pid)   # SYNCHRONIZE
-        if handle:
-            k32.WaitForSingleObject(handle, 0xFFFFFFFF)
-        elif ctypes.get_last_error() != 87:                 # (87: no such process, i.e. already gone)
-            log(f'warning: cannot watch the app (process {pid}, error {ctypes.get_last_error()})')
-            return
+
+        # Avoid blocking ReadFile: on Windows it stalls processes inheriting this pipe.
+        peek = ctypes.WinDLL('kernel32', use_last_error=True).PeekNamedPipe
+        peek.argtypes = (wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+        peek.restype = wintypes.BOOL
+        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+        while peek(handle, None, 0, None, None, None):
+            time.sleep(0.15)
+        error = ctypes.get_last_error()
+        if error not in (109, 232, 233):
+            log(f'cannot monitor the app pipe (Windows error {error})')
+            os._exit(1)
     else:
-        while True:
-            time.sleep(2)
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                break
-            except PermissionError:
-                pass
+        while sys.stdin.buffer.read(1):
+            pass
     os._exit(0)
 
 
@@ -122,10 +117,10 @@ def main():
     ap.add_argument('--cache', type=Path, default=None, help='folder for caches and temp files (default: <model>/.cache)')
     ap.add_argument('--device', choices=['auto', 'cuda', 'cpu'], default='auto')
     ap.add_argument('--port', type=int, default=0, help='0 = any free port')
-    ap.add_argument('--parent', type=int, default=0, help='exit when this process (the app) is gone')
+    ap.add_argument('--watch-stdin', action='store_true', help='exit when the launching app closes stdin')
     a = ap.parse_args()
-    if a.parent:
-        threading.Thread(target=watch_parent, args=(a.parent,), daemon=True).start()
+    if a.watch_stdin:
+        threading.Thread(target=watch_stdin, daemon=True).start()
     t0 = time.perf_counter()
     root = a.model.resolve()
     cache = (a.cache or root / '.cache').resolve()

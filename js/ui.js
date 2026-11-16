@@ -35,7 +35,7 @@ const Chat = {
   add(who, text, save = true) {
     const el = document.createElement('div'); el.className = 'msg ' + who; el.textContent = text;
     $('#msgs').append(el); this.scroll();
-    if (save && who !== 'sys') { this.log.push({ who, text }); this.log = this.log.slice(-60); try { localStorage.setItem('l2d.chat', JSON.stringify(this.log)); } catch (_) {} }
+    if (save && !DESKTOP && who !== 'sys') { this.log.push({ who, text }); this.log = this.log.slice(-60); try { localStorage.setItem('l2d.chat', JSON.stringify(this.log)); } catch (_) {} }
     return el;
   },
   // a sticker beside a short note, for the greeting and for errors (never saved); link: [text, onclick]
@@ -55,8 +55,26 @@ const Chat = {
   },
   scroll() { const m = $('#msgs'); m.scrollTop = m.scrollHeight; },
   status(text, busy) { const s = $('#chatStatus'); s.textContent = text; s.classList.toggle('busy', !!busy); },
-  restore() {
-    try { this.log = JSON.parse(localStorage.getItem('l2d.chat') || '[]'); } catch (_) { this.log = []; }
+  async reload() {
+    $('#msgs').replaceChildren();
+    await this.restore();
+  },
+  async restore() {
+    let legacy;
+    try {
+      const value = JSON.parse(localStorage.getItem('l2d.chat') || '[]');
+      if (Array.isArray(value)) legacy = value;
+    } catch (_) {}
+    this.log = (legacy || []).filter(row => ['user', 'bot'].includes(row?.who) && typeof row.text === 'string');
+    if (DESKTOP) {
+      try {
+        if (legacy) await window.petAPI.memory('legacy', legacy);
+        else this.card('pout', '旧聊天格式无法读取，原记录仍保留。');
+        this.log = (await window.petAPI.memory('history')).reverse();
+      } catch (e) {
+        this.card('pout', '聊天数据库暂不可用。可在记忆与数据设置中重试或恢复。');
+      }
+    }
     for (const m of this.log) this.add(m.who, m.text, false);
     // the model gets the recent conversation back as context
     AI.history = this.log.slice(-16).map(m => ({ role: m.who === 'user' ? 'user' : 'assistant', content: m.who === 'user' ? m.text : JSON.stringify({ reply: m.text }) }));
@@ -66,26 +84,58 @@ const Chat = {
     if (AI.ready()) this.card('happy', `已连接 ${AI_PRESETS[Store.data.preset] ? AI_PRESETS[Store.data.preset].label : 'AI'} · ${Store.data.model}`);
     else this.card('happy', '还没有配置 AI，她只会说固定台词。', ['去设置', () => Settings.open()]);
   },
+  async persist(who, text, conversation) {
+    if (!DESKTOP) return;
+    try { await window.petAPI.memory('append', { who, text, conversation }); }
+    catch (_) { this.card('pout', '上一条消息未写入聊天数据库。'); }
+  },
   async send(text) {
-    text = text.trim(); if (!text) return;
+    text = text.trim();
+    if (!text || this.sending) return;
+    this.sending = true;
+    const button = $('#chatForm button[type=submit]');
+    button.disabled = true;
+    try { await this.respond(text); }
+    finally { this.sending = false; button.disabled = false; }
+  },
+  async respond(text) {
+    const conversation = DESKTOP ? crypto.randomUUID() : null;
     touch(); this.add('user', text);
+    await this.persist('user', text, conversation);
+    if (DESKTOP) await MemoryUI.propose(text);
     S.look = { x: PET ? 0 : -0.35, y: 0.5, until: S.t + 2 };
-    if (!Store.data.aiChat || !AI.ready()) { const r = localReply(text); setTimeout(() => { say(r.reply, r.emotion, null, { kind: 'chat', ja: r.ja }); this.add('bot', r.reply); }, 350); return; }
+    if (!Store.data.aiChat || !AI.ready()) {
+      const r = localReply(text);
+      await new Promise(resolve => setTimeout(resolve, 350));
+      say(r.reply, r.emotion, null, { kind: 'chat', ja: r.ja });
+      this.add('bot', r.reply);
+      await this.persist('bot', r.reply, conversation);
+      return;
+    }
     const id = ++AI.seq; AI.lastAt = S.t;
-    setFace('curious', 30); twitchEars(); think(); this.status('正在输入…', true); this.typing(true); $('#chatForm button').disabled = true;
+    setFace('curious', 30); twitchEars(); think(); this.status('正在输入…', true); this.typing(true);
     try {
       const o = await AI.ask(text, aiState(), { remember: true, timeout: 45000 });
       // with a voice the reply waits (a little) for its audio, so words and voice start together
       if (id === AI.seq) await Voice.prepare(o.reply, { ja: o.ja, kind: 'chat' }, 10000);
       this.typing(false); this.add('bot', o.reply);
+      await this.persist('bot', o.reply, conversation);
       if (id === AI.seq) applyAI(o, 'smile', null, true); else please(Math.max(0, o.affection) * 0.5);
     } catch (e) {
       this.typing(false); this.card('pout', 'AI 请求失败：' + e.message);
       if (Store.data.bubbleOnly) toast('AI 请求失败：' + e.message, 4000, 'pout');
       if (id === AI.seq) say('唔…刚刚没听清，能再说一遍吗？', 'troubled', 2.5);
-    } finally { this.typing(false); this.status('在线'); $('#chatForm button').disabled = false; }
+    } finally { this.typing(false); this.status('在线'); }
   },
-  clear() {
+  async clear() {
+    if (this.sending) return toast('请等待当前对话结束');
+    if (!window.confirm('清除全部聊天记录？长期记忆保留。')) return;
+    if (DESKTOP) {
+      this.sending = true;
+      try { await window.petAPI.memory('clearHistory'); }
+      catch (_) { return toast('清除失败，请检查记忆数据库状态'); }
+      finally { this.sending = false; }
+    }
     this.log = []; AI.history = []; $('#msgs').innerHTML = '';
     try { localStorage.removeItem('l2d.chat'); } catch (_) {}
     this.hello();
@@ -119,7 +169,7 @@ const Settings = {
     $('#sLevel').value = s.pet.level; $('#sScale').value = s.pet.scale; $('#sClick').checked = s.pet.clickThrough; $('#sStartPet').checked = !!s.pet.startAsPet;
     $('#sScaleOut').textContent = Math.round(s.pet.scale * 100) + '%';
     $('#sTestOut').textContent = ''; $('#sTestOut').className = '';
-    if (DESKTOP) this.autoStart();
+    if (DESKTOP) { this.autoStart(); MemoryUI.open(); }
     VoiceUI.open();
     this.note(); $('#settings').classList.remove('hidden'); petSide();
   },
@@ -422,7 +472,7 @@ function initUI() {
   $('#btnSettings').onclick = () => Settings.open();
   $('#btnPet').onclick = () => window.petAPI && window.petAPI.toPet();
   const inp = $('#chatInput');
-  $('#chatForm').onsubmit = e => { e.preventDefault(); const v = inp.value; inp.value = ''; inp.style.height = ''; Chat.send(v); };
+  $('#chatForm').onsubmit = e => { e.preventDefault(); if (Chat.sending) return; const v = inp.value; inp.value = ''; inp.style.height = ''; Chat.send(v); };
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#chatForm').requestSubmit(); }
     if (e.key === 'Escape' && !e.isComposing) Chat.open(false);
@@ -440,7 +490,9 @@ function initUI() {
   };
   window.addEventListener('keydown', e => { if (e.key === 'Escape') Settings.close(); });
   VoiceUI.init();
-  Chat.restore();
+  MemoryUI.init();
+  Chat.sending = true;
+  Chat.restore().finally(() => { Chat.sending = false; });
   initRec();
   if (DESKTOP) {
     window.petAPI.onSettings(async () => { await Store.load(); applyNames(); applyBg(); if (PET) Sizer.show(); });

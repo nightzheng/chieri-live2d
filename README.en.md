@@ -212,3 +212,18 @@ In the main window she stands in a café. The top of the "显示" (Display) pane
 - Configuration is in `js/config.js` (body part coordinates, expression mapping, lines), the Japanese versions of the lines in `js/lines_ja.js`, deformation in `js/rig.js`, rendering and interaction in `js/app.js`, voice in `js/voice.js`, the AI client and settings storage in `js/ai.js`, and the chat window, settings panel and desktop pet behavior in `js/ui.js`. The local voice server is `voice/chieri_server.py`.
 
 Note: this is a Live2D-style rig implemented in a web page, not a `.moc3` model exported from Cubism Editor.
+
+## Memory and data (Windows desktop)
+
+Open **记忆与数据** (Memory and data) in Settings. Say “千绘莉，记住我喜欢喝冰美式” (“Chieri, remember that I like iced Americanos”) and confirm to save it. “更正：我不喜欢喝冰美式” (“Correction: I dislike iced Americanos”) archives the earlier preference after confirmation. For other corrections, edit the original entry. Automatic suggestions are off by default. When enabled, Chieri looks for certain preferences and habits locally in your messages. Each suggestion requires confirmation. You can add and edit memories without configuring AI.
+
+- Settings, encrypted keys, and the memory location stay in **%APPDATA%\千绘莉\**. The default database is **%LOCALAPPDATA%\千绘莉\memory\memory.sqlite**. Database backups go in **backups** next to the active library. Choose an empty folder for a new installation location. Ordinary upgrades and uninstallations keep user data by default.
+- Migrating to a new location verifies a snapshot before switching paths and keeps the originals. If a drive becomes unavailable or a database is damaged, relink an existing library or restore a backup. Restore retains the files that were present at the destination. Once you have checked the active location and backup, you can manage old copies in File Explorer.
+- The desktop app imports existing chats on first launch in their original order. Legacy messages have no timestamps, so the UI shows estimated import times. Settings provide paged history, search, and deletion of individual turns. Clearing chat and clearing long-term memory require separate confirmations. The web app continues to use browser storage.
+- Long-term memory is saved locally. When enabled, relevant entries may accompany your request to the configured model provider. You can inspect the entries included in the latest AI chat or turn off long-term memory. Recent chat still forms the current conversation context. Memory and SQLite backups have no application-level encryption.
+- JSON exports contain active memories only. SQLite backups also contain original chat messages and archived memories. Keep them private and copy essential backups to a separate drive. Windows DPAPI keys may fail to decrypt on a different device or account, so you may need to re-enter your API key.
+- On the first upgrade from an older release, NSIS may run the already installed uninstaller, which contains the legacy PowerShell scan for Python processes. Exit Chieri from the tray before upgrading. If other Python jobs must stay running, wait for them to finish before upgrading. See the [Windows verification report](docs/persistent-memory-verification.md).
+
+### Development and packaging
+
+Run `npm test` with Node.js 24. Build the online edition with `npm run dist:lite`. For `npm run dist`, first copy the `resources\voice\Chieri_GPTSoVITS_20261103` model directory from an existing full installation into the project's `voice\` directory. If dependency installation left the Electron runtime undownloaded, run `node node_modules/electron/install.js`.

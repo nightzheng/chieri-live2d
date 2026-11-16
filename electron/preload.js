@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('petAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: s => ipcRenderer.invoke('settings:set', s),
+  memory: (operation, value) => ipcRenderer.invoke('memory:operate', operation, value),
   aiRequest: r => ipcRenderer.invoke('ai:request', r),
   setIgnoreMouse: v => ipcRenderer.send('pet:ignore', !!v),
   applyPet: p => ipcRenderer.send('pet:apply', p),

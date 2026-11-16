@@ -331,3 +331,12 @@ html.pet.resizing #sizer { display: block; position: absolute; inset: 0; z-index
   #chat { left: 12px; right: 12px; width: auto; bottom: 12px; height: calc(50% - 60px); }
   html.bubble-only #chat { height: auto; }
 }
+
+#memorySettings .note { margin-left: 0; overflow-wrap: anywhere; }
+#memorySettings details { margin-top: 12px; }
+#memorySettings summary { cursor: pointer; }
+#memorySettings ul { padding-left: 18px; overflow-wrap: anywhere; }
+.data-list { margin-top: 8px; max-height: 250px; overflow: auto; }
+.data-list article { border-bottom: 1px solid var(--line); padding: 7px 0; overflow-wrap: anywhere; }
+.data-list p { margin: 4px 0; white-space: pre-wrap; }
+.data-list small { color: var(--ink3); }

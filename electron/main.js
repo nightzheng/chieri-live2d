@@ -15,7 +15,7 @@ const SCALE_MIN = 0.4, SCALE_MAX = 2.5;
 const LEVELS = { top: '最前（盖过全屏和任务栏）', floating: '置顶', normal: '普通' };
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
-if (!app.requestSingleInstanceLock()) app.quit();
+if (!app.requestSingleInstanceLock()) { app.exit(0); return; }
 app.setAppUserModelId('com.lizitcxyz.nekomimi');
 
 // ---------------------------------------------------------------- settings (API key encrypted at rest)
@@ -188,10 +188,15 @@ ipcMain.handle('settings:set', (_, s) => {
   saveSettings(); applyPet(); recShortcuts(); tray && tray.setToolTip(settings.name || '千绘莉'); return true;
 });
 // AI calls go out from here: no CORS in the way, and the key never leaves this machine except to the endpoint
-ipcMain.handle('ai:request', async (_, r) => {
+let addMemoryContext;
+const ownedWindow = sender => [studio, pet].find(w => w && !w.isDestroyed() && w.webContents === sender);
+ipcMain.handle('ai:request', async (event, r) => {
   try {
     const u = new URL(r.url); if (!/^https?:$/.test(u.protocol)) throw new Error('只支持 http(s) 地址');
-    const res = await fetch(u, { method: 'POST', headers: r.headers, body: r.body, signal: AbortSignal.timeout(r.timeout || 30000) });
+    const frame = event.senderFrame;
+    const body = r.memory === true && ownedWindow(event.sender) && frame === event.sender.mainFrame &&
+      frame?.url.split('?')[0] === 'app://local/index.html' ? addMemoryContext(r.body) : r.body;
+    const res = await fetch(u, { method: 'POST', headers: r.headers, body, signal: AbortSignal.timeout(r.timeout || 30000) });
     return { ok: res.ok, status: res.status, text: await res.text() };
   } catch (e) { return { ok: false, error: e.name === 'TimeoutError' ? '请求超时' : e.message }; }
 });
@@ -249,6 +254,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   loadSettings();
+  addMemoryContext = require('./memory-ipc')(ownedWindow, ROOT);
   recShortcuts();
   buildTray();
   setInterval(pollCursor, 33);

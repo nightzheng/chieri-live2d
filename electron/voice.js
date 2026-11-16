@@ -9,7 +9,7 @@ const { app, ipcMain, dialog, shell, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { spawn, execFile, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 
 const VOICE_DIR = app.isPackaged ? path.join(process.resourcesPath, 'voice') : path.join(__dirname, '..', 'voice');
 const MODEL = path.join(VOICE_DIR, 'Chieri_GPTSoVITS_20261103');
@@ -112,33 +112,50 @@ async function ttsFetch(r) {
 }
 
 // ---------------------------------------------------------------- the local Chieri model
-// The venv's python.exe is only a launcher that runs the real interpreter as its child, so a plain
-// kill() leaves the server running: end the whole tree.
-function killTree(proc, sync) {
-  if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;   // gone (and its pid may be reused)
-  if (process.platform !== 'win32') { try { proc.kill(); } catch (_) {} return; }
-  const args = ['/PID', String(proc.pid), '/T', '/F'], opt = { windowsHide: true, stdio: 'ignore' };
-  try { if (sync) execFileSync('taskkill', args, opt); else execFile('taskkill', args, opt, () => {}); } catch (_) {}
+// Environment setup can spawn pip children. It is only cancelled while its tracked child is live.
+function killTree(proc) {
+  if (!proc?.pid || proc.exitCode !== null || proc.signalCode !== null) return;
+  if (process.platform !== 'win32') { proc.kill(); return; }
+  execFile('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true }, error => {
+    if (error && proc.exitCode === null) note('无法停止运行环境命令，请等待它结束。');
+  });
 }
-// Servers left over from an earlier run: an app killed while its server was still loading, or an older
-// version whose server only noticed that after loading. They hold GPU memory (the new one may not fit)
-// and files in the install folder (an update could not replace them). Stopped once, before the first start.
-let strays = null;
-function stopStrays() {
-  if (strays) return strays;
-  if (process.platform !== 'win32') return (strays = Promise.resolve());
-  // python processes only: this PowerShell's own command line has the file name in it too
-  const ps = `Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'python*' -and $_.CommandLine -like '*chieri_server.py*' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }`;
-  return (strays = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps], { timeout: 30000 })
-    .then(out => { const n = out.split(/\s+/).filter(Boolean).length; if (n) log(`已结束 ${n} 个上次残留的语音进程`); })
-    .catch(() => {}));
+
+let stoppingVoice = Promise.resolve();
+let quittingVoice = false;
+let reportedLegacy = false;
+
+function closeVoice(proc) {
+  if (!proc?.pid || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+  return new Promise(resolve => {
+    const done = () => {
+      clearTimeout(stopTimer);
+      clearTimeout(deadline);
+      proc.removeListener('exit', done);
+      proc.removeListener('error', done);
+      resolve();
+    };
+    const stopTimer = setTimeout(() => {
+      note('语音进程未及时退出，尝试结束当前启动的进程。');
+      proc.kill();
+    }, 3000);
+    const deadline = setTimeout(() => {
+      note('未能确认语音进程退出。请检查当前语音服务后再重启。');
+      done();
+    }, 5000);
+    proc.once('exit', done);
+    proc.once('error', done);
+    proc.stdin.destroy();
+  });
 }
+
 // a load is left alone this long before a restart with the same settings may replace it: importing PyTorch
 // and GPT-SoVITS prints nothing for a minute or more, and restarting then only starts that wait over
 const LOAD_PATIENCE = 180000;
 // past this a load counts as stuck: it is stopped and reported (the log has its stack dumps by then)
 const LOAD_TIMEOUT = 600000;
 function startServer(o = {}) {
+  if (quittingVoice) return Promise.reject(new Error('应用正在退出'));
   const py = pythonFor(o), device = o.device || cfg().device || 'auto', stamp = modelId();
   if (server) {
     const why = server.py !== py ? `Python 改成了 ${py || '（无）'}` : server.device !== device ? `运行设备改成了 ${device}`
@@ -148,7 +165,7 @@ function startServer(o = {}) {
       note(`模型还在加载（已经 ${Math.round(loading / 1000)} 秒），不用重启。第一次加载可能要一两分钟，${Math.round(LOAD_PATIENCE / 60000)} 分钟还没好再点「加载 / 重启模型」。`);
       return server.ready;
     }
-    if (why) stopServer(false, why);
+    if (why) stopServer(why);
   }
   if (server) return server.ready;
   if (!LOCAL) return Promise.reject(new Error('这个版本没有内置本地声线模型'));
@@ -161,19 +178,23 @@ function startServer(o = {}) {
   setState({ state: 'starting', device: '', msg: '', model: null });
   // a stopped server's promise rejects with .stopped set: replaced on purpose, not an error to report
   const stopped = () => Object.assign(new Error('语音进程已停止'), { stopped: true });
-  me.ready = stopStrays().then(() => new Promise((resolve, reject) => {
+  me.ready = stoppingVoice.then(() => new Promise((resolve, reject) => {
     if (me.stopping) return reject(stopped());
+    if (!reportedLegacy) {
+      reportedLegacy = true;
+      note('旧版本遗留的 Python 进程无法确认归属，已跳过自动清理。');
+    }
     log(`加载声线模型：${py}（设备 ${device}）`);
     // the loading itself is mostly silent: say now and then that it is still going
     me.beat = setInterval(() => {
       if (server !== me || me.port) return;
       const t = Date.now() - me.t0;
       if (t < LOAD_TIMEOUT) return note(`……仍在加载（${Math.round(t / 1000)} 秒）`);
-      me.timedOut = true; clearInterval(me.beat); killTree(me.proc);
+      me.timedOut = true; clearInterval(me.beat); stoppingVoice = closeVoice(me.proc);
     }, 20000);
-    // no stdin: the server watches the app's process instead (see watch_parent in chieri_server.py)
-    const proc = me.proc = spawn(py, ['-u', SERVER, '--model', MODEL, '--cache', path.join(WORK, 'cache'), '--device', device, '--parent', String(process.pid)],
-      { cwd: WORK, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } });
+    const proc = me.proc = spawn(py, ['-u', SERVER, '--model', MODEL, '--cache', path.join(WORK, 'cache'), '--device', device, '--watch-stdin'],
+      { cwd: WORK, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } });
+    proc.stdin.on('error', () => {});
     lines(proc.stdout, l => {
       const m = /^CHIERI_READY (.+)$/.exec(l);
       if (!m) return log(l);
@@ -200,13 +221,13 @@ function startServer(o = {}) {
   me.ready.catch(() => {});
   return me.ready;
 }
-// now: the app is quitting, end it right away (otherwise it gets a moment to exit on its own); why: logged
-function stopServer(now, why) {
-  if (!server) return;
+function stopServer(why) {
+  if (!server) return stoppingVoice;
   const s = server; server = null; s.stopping = true; clearInterval(s.beat);
-  if (why && s.proc) log(`■ 停止语音进程：${why}${s.port ? '' : `（它加载了 ${Math.round((Date.now() - s.t0) / 1000)} 秒，还没加载完）`}`);
-  if (s.proc) killTree(s.proc, now);   // (nothing to save: it is only a model in memory)
+  if (why && s.proc) log(`■ 停止语音进程：${why}`);
+  if (s.proc) stoppingVoice = closeVoice(s.proc);
   setState({ state: 'off', msg: '', model: null });
+  return stoppingVoice;
 }
 
 // one synthesis at a time; lines she is saying now go ahead of pre-generation, and a line made moot by
@@ -393,7 +414,7 @@ async function setup(o) {
     catch (e) { throw job.cancelled ? new Error('已取消安装') : e; }
   };
   try {
-    stopServer(false, '开始安装运行环境'); await stopStrays();   // a running server holds files pip may have to replace
+    await stopServer('开始安装运行环境');   // a running server holds files pip may have to replace
     const gpu = o.device === 'cpu' ? false : o.device === 'cuda' ? true : await hasNvidia();
     const torchTitle = `安装 PyTorch 2.7.1（${gpu ? 'CUDA 12.8 显卡版，约 3.3 GB' : o.device === 'cpu' ? 'CPU 版' : '没有检测到 NVIDIA 显卡，安装 CPU 版'}）`;
     const req = path.join(MODEL, 'requirements-locked.txt');
@@ -445,6 +466,16 @@ module.exports = function initVoice(settingsGetter) {
     return r.canceled ? '' : r.filePaths[0];
   });
   ipcMain.on('tts:pythonPage', () => shell.openExternal('https://www.python.org/downloads/windows/'));
-  app.on('will-quit', () => { stopServer(true); if (setupJob && setupJob.child) killTree(setupJob.child, true); });
+  let voiceStopped = false;
+  app.on('before-quit', event => {
+    if (voiceStopped) return;
+    event.preventDefault();
+    if (quittingVoice) return;
+    quittingVoice = true;
+    const child = setupJob?.child;
+    if (setupJob) setupJob.cancelled = true;
+    if (child) killTree(child);
+    stopServer().finally(() => { voiceStopped = true; app.quit(); });
+  });
   adoptEnv();
 };

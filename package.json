@@ -1,13 +1,14 @@
 {
   "name": "nekomimi-pet",
   "productName": "千绘莉",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "雪村千绘莉 · Live2D 风格的猫耳少女桌面宠物",
   "author": "lizitcxyz",
   "main": "electron/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node --test tests/*.test.js",
     "dist": "electron-builder --win nsis --config build/full.config.js",
     "dist:lite": "electron-builder --win nsis --config build/lite.config.js"
   },
@@ -50,6 +51,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "千绘莉",

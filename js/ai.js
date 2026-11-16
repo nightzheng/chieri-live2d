@@ -123,8 +123,17 @@ ${s.persona}
 
   // one round trip; resolves to {reply, emotion, action, affection, ja} or throws
   async ask(input, state, { remember = true, timeout = 20000 } = {}) {
-    const msgs = [...this.history.slice(-16), { role: 'user', content: input }];
-    const out = this.parse(await this.complete(this.systemPrompt(state), msgs, { timeout, maxTokens: 500, temperature: 0.9 }));
+    const recent = [];
+    let remaining = 6000;
+    for (const msg of this.history.slice(-16).reverse()) {
+      if (msg.content.length > remaining) break;
+      recent.unshift(msg);
+      remaining -= msg.content.length;
+    }
+    while (recent[0]?.role === 'assistant') recent.shift();
+    const msgs = [...recent, { role: 'user', content: input }];
+    const sys = this.systemPrompt(state) + '\n如果当前对话和资料都没有提供过去的细节，直接承认不记得。';
+    const out = this.parse(await this.complete(sys, msgs, { timeout, maxTokens: 500, temperature: 0.9, memory: remember }));
     if (remember) { this.history.push({ role: 'user', content: input }, { role: 'assistant', content: JSON.stringify(out) }); this.history = this.history.slice(-24); }
     return out;
   },
@@ -135,7 +144,7 @@ ${s.persona}
     return t.trim().replace(/^[「"']+|[」"']+$/g, '');
   },
   // system prompt + messages -> the model's text
-  async complete(sys, msgs, { timeout = 20000, maxTokens = 500, temperature = 0.9 } = {}) {
+  async complete(sys, msgs, { timeout = 20000, maxTokens = 500, temperature = 0.9, memory = false } = {}) {
     const s = Store.data;
     let req;
     if (s.kind === 'anthropic') {
@@ -147,7 +156,7 @@ ${s.persona}
       req = { url: s.baseUrl.replace(/\/+$/, '') + '/chat/completions', headers,
         body: { model: s.model, max_tokens: maxTokens, temperature, messages: [{ role: 'system', content: sys }, ...msgs] } };
     }
-    const res = await this.post(req, timeout);
+    const res = await this.post(req, timeout, memory);
     if (s.kind === 'anthropic') {
       if (res.stop_reason === 'refusal') throw new Error('模型拒绝了这次请求');
       return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
@@ -155,9 +164,9 @@ ${s.persona}
     return res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content || '';
   },
 
-  async post(req, timeout) {
+  async post(req, timeout, memory) {
     if (window.petAPI) {
-      const r = await window.petAPI.aiRequest({ url: req.url, headers: req.headers, body: JSON.stringify(req.body), timeout });
+      const r = await window.petAPI.aiRequest({ url: req.url, headers: req.headers, body: JSON.stringify(req.body), timeout, memory });
       if (!r.ok) throw new Error(r.error || `HTTP ${r.status}: ${String(r.text || '').slice(0, 200)}`);
       return JSON.parse(r.text);
     }

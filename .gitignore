@@ -16,3 +16,9 @@ node_modules/
 /githubkey.txt
 /.claude/settings.local.json
 /.claude/scheduled_tasks.lock
+
+# Local memory archives
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal

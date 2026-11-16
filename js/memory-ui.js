@@ -1,0 +1,149 @@
+'use strict';
+
+const MemoryUI = {
+  id: null,
+  offset: 0,
+  before: undefined,
+  running: false,
+  request(operation, value) { return window.petAPI.memory(operation, value); },
+  async run(task) {
+    if (this.running) return;
+    this.running = true;
+    $('#mEnabled').disabled = true;
+    $('#mAuto').disabled = true;
+    $('#mFeedback').textContent = '';
+    try { await task(); }
+    catch (error) { $('#mFeedback').textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, ''); }
+    finally {
+      this.running = false;
+      $('#mEnabled').disabled = false;
+      $('#mAuto').disabled = !$('#mEnabled').checked;
+    }
+  },
+  open() { return this.run(() => this.refresh()); },
+  async refresh() {
+    const status = await this.request('status');
+    $('#mStatus').textContent = status.file + (status.error ? ' · ' + status.error : ' · ' + status.count + ' 条当前记忆');
+    $('#mEnabled').checked = status.enabled;
+    $('#mAuto').checked = status.auto;
+    const rows = status.lastUsed.map(row => {
+      const el = document.createElement('li');
+      el.textContent = row.content;
+      return el;
+    });
+    if (!rows.length) {
+      const el = document.createElement('li');
+      el.textContent = '暂无';
+      rows.push(el);
+    }
+    $('#mUsed').replaceChildren(...rows);
+    if (status.error) {
+      $('#mList').replaceChildren();
+      $('#mHistory').replaceChildren();
+      return;
+    }
+    await this.list();
+    await this.history();
+  },
+  async propose(text) {
+    try {
+      const proposal = await this.request('propose', text);
+      if (!proposal) return;
+      if (!window.confirm('保存为长期记忆？\n\n' + proposal.content + '\n\n如果已有同一偏好的旧说法，它会被归档。')) return;
+      await this.request('remember', text);
+      Chat.card('happy', '已保存长期记忆。');
+    } catch (_) { Chat.card('pout', '未能保存长期记忆。请检查记忆与数据设置。'); }
+  },
+  button(text, action) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'mini'; btn.textContent = text;
+    btn.onclick = action;
+    return btn;
+  },
+  row(text, metadata, actions) {
+    const article = document.createElement('article'), content = document.createElement('p');
+    const details = document.createElement('small'), buttons = document.createElement('div');
+    content.textContent = text;
+    details.textContent = metadata;
+    buttons.className = 'row2 wrap'; buttons.append(...actions);
+    article.append(details, content, buttons);
+    return article;
+  },
+  edit(row) {
+    this.id = row?.id ?? null;
+    $('#mContent').value = row?.content ?? '';
+    $('#mType').value = row?.type ?? '事实';
+    $('#mTags').value = row?.tags ?? '';
+    $('#mSave').textContent = row ? '保存修改' : '添加记忆';
+    $('#mCancel').classList.toggle('hidden', !row);
+    if (row) $('#mContent').focus();
+  },
+  async list() {
+    const rows = await this.request('list', { query: $('#mQuery').value, state: $('#mFilter').value, offset: this.offset });
+    $('#mPrev').disabled = this.offset === 0;
+    $('#mNext').disabled = rows.length < 40;
+    $('#mList').replaceChildren(...rows.map(row => this.row(row.content,
+      [row.type, row.tags, new Date(row.updated).toLocaleDateString()].filter(Boolean).join(' · '), [
+        this.button(row.archived ? '编辑并恢复' : '编辑', () => this.edit(row)),
+        this.button('删除', () => this.run(async () => {
+          if (!window.confirm('删除这条长期记忆？')) return;
+          await this.request('remove', row.id);
+          if (this.id === row.id) this.edit();
+          await this.refresh();
+        })),
+      ])));
+    if (!rows.length) $('#mList').textContent = '没有匹配的记忆';
+  },
+  async history(older = false) {
+    const rows = await this.request('history', { query: $('#mChatQuery').value, before: older ? this.before : undefined });
+    this.before = rows.at(-1)?.id;
+    $('#mChatMore').disabled = rows.length < 40;
+    $('#mHistory').replaceChildren(...rows.map(row => this.row(row.text,
+      [row.who === 'user' ? '我' : Store.data.name, new Date(row.created).toLocaleString()].join(' · '), [
+        this.button('删除这轮对话', () => this.run(async () => {
+          if (Chat.sending) throw new Error('请等待当前对话结束');
+          if (!window.confirm('删除这轮对话中的全部消息？长期记忆保留。')) return;
+          await this.request('deleteConversation', row.conversation);
+          await Chat.reload();
+          await this.history();
+        })),
+      ])));
+    if (!rows.length) $('#mHistory').textContent = '没有匹配的聊天记录';
+  },
+  init() {
+    if (!window.petAPI) return;
+    $('#mEnabled').onchange = $('#mAuto').onchange = () => this.run(async () => {
+      await this.request('options', { enabled: $('#mEnabled').checked, auto: $('#mAuto').checked });
+      await this.refresh();
+    });
+    $('#mSearch').onclick = $('#mFilter').onchange = () => this.run(async () => { this.offset = 0; await this.list(); });
+    $('#mPrev').onclick = () => this.run(async () => { this.offset = Math.max(0, this.offset - 40); await this.list(); });
+    $('#mNext').onclick = () => this.run(async () => { this.offset += 40; await this.list(); });
+    $('#mCancel').onclick = () => this.edit();
+    $('#mSave').onclick = () => this.run(async () => {
+      await this.request('save', { id: this.id, content: $('#mContent').value, type: $('#mType').value, tags: $('#mTags').value });
+      this.edit(); this.offset = 0; $('#mFilter').value = 'active';
+      await this.refresh();
+      $('#mFeedback').textContent = '记忆已保存';
+    });
+    $('#mChatSearch').onclick = () => this.run(() => this.history());
+    $('#mChatMore').onclick = () => this.run(() => this.history(true));
+    $('#mClearChat').onclick = () => this.run(async () => { await Chat.clear(); await this.history(); });
+    document.querySelectorAll('[data-memory]').forEach(btn => btn.onclick = () => this.run(async () => {
+      const action = btn.dataset.memory;
+      const reloads = ['refresh', 'restore', 'relink'].includes(action);
+      if (reloads && Chat.sending) throw new Error('请等待当前对话结束');
+      if (action === 'clearMemories' && !window.confirm('删除全部长期记忆（含已归档记忆）？聊天记录及备份文件保留。')) return;
+      if (reloads) Chat.sending = true;
+      try {
+        const result = action === 'refresh' ? true : await this.request(action);
+        if (reloads && result) await Chat.reload();
+        await this.refresh();
+        if (result && action === 'backup') $('#mFeedback').textContent = '已备份到 ' + result;
+        if (result && action === 'exportFile') $('#mFeedback').textContent = '已导出到 ' + result;
+        if (typeof result === 'number') $('#mFeedback').textContent = '已处理 ' + result + ' 条记忆';
+        if (action === 'clearMemories') $('#mFeedback').textContent = '已清除长期记忆';
+      } finally { if (reloads) Chat.sending = false; }
+    }));
+  },
+};
