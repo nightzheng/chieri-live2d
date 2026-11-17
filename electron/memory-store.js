@@ -6,7 +6,8 @@ const { randomUUID, createHash } = require('node:crypto');
 
 const FILE = 'memory.sqlite';
 const APP_ID = 0x43484d45;
-const VERSION = 2;
+const VERSION = 3;
+const { DAY, TEMPORARY, FICTION, canonical, terms, reindex, validLifecycle, expiryFor } = require('./memory-quality');
 const { SCHEMA: AGENDA_SCHEMA } = require('./agenda');
 const MAX_TEXT = 4000;
 const TYPES = ['事实', '偏好', '兴趣', '事项', '约定', '关系', '其他'];
@@ -23,24 +24,35 @@ function inputText(value, max = MAX_TEXT, allowEmpty = false) {
 const normalize = text => text.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
 const sha = text => createHash('sha256').update(text).digest('hex');
 
-function extraction(input, auto) {
+function extraction(input, auto, now = Date.now()) {
   const text = inputText(input).trim();
-  if (SENSITIVE.test(text)) return null;
+  if (SENSITIVE.test(text) || FICTION.test(text)) return null;
   const explicit = /^(?:千绘莉[，,、\s]*)?(?:请)?(?:记住|帮我记住|更正(?:一下)?)[：:，,\s]*(.+)$/u.exec(text);
   const content = (explicit ? explicit[1] : text).replace(/[。！？!?]+$/u, '').trim();
-  const preference = /^我((?:现在|已经|以前|一直|最)?(?:不再|不)?)?(喜欢|爱喝|爱吃|偏爱|讨厌)([^，,。；;！？!?]{1,100})$/u.exec(content);
-  const candidate = preference || /^我(?:一直在|长期在|最近在|经常|习惯于)[^，,。；;！？!?]{2,100}$/u.test(content);
+  const preference = /^我((?:现在|已经|以前|一直|最)?(?:不再|不|很|特别)?)?(喜欢|喜爱|爱喝|爱吃|偏爱|讨厌)([^，,。；;！？!?]{1,100})$/u.exec(content);
+  const candidate = preference || /^我(?:一直在|长期在|经常|习惯于|的长期目标是|擅长|曾经参加|现居|现在住在|住在|目前的职业是)[^，,。；;！？!?]{2,100}$/u.test(content);
   const correction = preference && /不/.test(preference[1] || '');
   if (!content || content.length > 1000 || (!explicit && !correction && (!auto || !candidate))) return null;
   if (preference?.[1]?.startsWith('以前')) return null;
+  const expiry = expiryFor(content, now);
+  if (expiry && !explicit) return null;
   return { content, type: preference ? '偏好' : '其他', tags: '',
-    source: explicit || correction ? 'explicit' : 'candidate', confidence: explicit || correction ? 1 : 0.75 };
+    source: explicit || correction ? 'explicit' : 'candidate', confidence: explicit || correction ? 1 : 0.75,
+    expires_at: expiry, importance: explicit ? 3 : 2 };
 }
 
-function preferenceFact(content) {
-  const match = /^我(?:现在|一直|最|已经)?(不再|不)?(喜欢|讨厌|偏爱|爱喝|爱吃)\s*(.+)$/u.exec(content.trim());
+function structuredFact(content) {
+  const value = content.trim();
+  for (const [key, pattern] of [
+    ['residence', /^我(?:目前|现在)?(?:住在|居住在|现居)\s*([^，,。；;!?！？]{1,40})[。！]?$/u],
+    ['occupation', /^我(?:目前|现在)?的职业是\s*([^，,。；;!?！？]{1,40})[。！]?$/u],
+  ]) {
+    const match = pattern.exec(value);
+    if (match) return { key, stance: normalize(canonical(match[1])) };
+  }
+  const match = /^我(?:现在|一直|最|已经)?(不再|不)?(?:很|特别)?(喜欢|喜爱|讨厌|偏爱|爱喝|爱吃)\s*(.+)$/u.exec(value);
   if (!match) return { key: '', stance: '' };
-  const topic = normalize(match[3].replace(/^(?:喝|吃)/, ''));
+  const topic = normalize(canonical(match[3].replace(/^(?:喝|吃)/, '')));
   return { key: 'preference:' + topic, stance: (match[1] ? 'not-' : '') + (match[2] === '讨厌' ? 'dislike' : 'like') };
 }
 
@@ -71,10 +83,11 @@ function verify(db) {
     db.prepare('SELECT key FROM proactive LIMIT 1').get();
     if (db.prepare('PRAGMA foreign_key_check').get()) throw new Error('提醒数据库引用无效');
   }
+  if (version >= 3) db.prepare('SELECT term FROM memory_terms LIMIT 1').get();
   return version;
 }
 
-function openDatabase(file, create = false) {
+function openDatabase(file, create = false, backup) {
   const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(file, { allowExtension: false });
   try {
@@ -103,7 +116,27 @@ function openDatabase(file, create = false) {
       db.prepare('INSERT INTO metadata VALUES (?, ?)').run('lineage', randomUUID());
     });
     const version = verify(db);
-    if (version === 1) transaction(db, () => db.exec(AGENDA_SCHEMA + 'PRAGMA user_version=2'));
+    if (version < VERSION) {
+      if (!create) backup(db, version);
+      transaction(db, () => {
+        if (version === 1) db.exec(AGENDA_SCHEMA);
+        db.exec(`ALTER TABLE memories ADD COLUMN importance INTEGER NOT NULL DEFAULT 2 CHECK(importance BETWEEN 1 AND 3);
+          ALTER TABLE memories ADD COLUMN expires_at INTEGER;
+          CREATE TABLE memory_terms (term TEXT, memory_id TEXT REFERENCES memories(id) ON DELETE CASCADE,
+            PRIMARY KEY(term,memory_id)) WITHOUT ROWID;
+          CREATE INDEX memory_terms_by_id ON memory_terms(memory_id);
+          CREATE INDEX memories_expiry ON memories(expires_at) WHERE archived=0;
+          UPDATE memories SET importance=3 WHERE source IN ('manual','explicit');
+          PRAGMA user_version=3;`);
+        for (const row of db.prepare('SELECT id,content,tags FROM memories').all()) {
+          reindex(db, row.id, row.content, row.tags);
+          db.prepare('UPDATE memories SET fact_key=? WHERE id=?').run(structuredFact(row.content).key, row.id);
+        }
+        db.exec(`UPDATE memories SET archived=1 WHERE archived=0 AND id IN (
+          SELECT id FROM (SELECT id,row_number() OVER (PARTITION BY fact_key ORDER BY confirmed DESC,updated DESC,id) AS position
+          FROM memories WHERE archived=0 AND fact_key<>'') WHERE position>1)`);
+      });
+    }
     db.exec('PRAGMA foreign_keys=ON');
     if (readVersion(db, 'PRAGMA journal_mode=WAL') !== 'wal') throw new Error('数据库无法启用 WAL');
     db.exec('PRAGMA synchronous=FULL; BEGIN IMMEDIATE; ROLLBACK');
@@ -119,6 +152,7 @@ function digest(db) {
   const version = readVersion(db, 'PRAGMA user_version');
   const tables = [['messages', 'id'], ['memories', 'id'], ['metadata', 'key']];
   if (version >= 2) tables.push(['reminders', 'id'], ['reminder_events', 'id'], ['proactive', 'key']);
+  if (version >= 3) tables.push(['memory_terms', 'term,memory_id']);
   hash.update(String(version));
   for (const [table, key] of tables) {
     hash.update(table);
@@ -147,26 +181,12 @@ function writeAtomic(file, value) {
   }
 }
 
-function tokens(value) {
-  const terms = new Set();
-  for (const match of value.normalize('NFKC').toLowerCase().matchAll(/\p{Script=Han}+|[a-z0-9]{2,}/gu)) {
-    const chars = [...match[0]];
-    if (!/\p{Script=Han}/u.test(match[0])) terms.add(match[0]);
-    else for (let i = 0; i < chars.length - 1; i++) {
-      const pair = chars.slice(i, i + 2).join('');
-      if (!['我喜', '我的', '你知', '知道', '记得', '什么', '是不是', '请问'].includes(pair)) terms.add(pair);
-      if (i + 2 < chars.length) terms.add(chars.slice(i, i + 3).join(''));
-    }
-  }
-  return terms;
-}
-
 function validateMemory(value) {
   const content = inputText(value?.content, 1000).trim();
   const tags = inputText(value.tags ?? '', 200, true).trim();
   if (SENSITIVE.test(content + ' ' + tags)) throw new Error('记忆可能包含敏感资料，未保存');
   if (!normalize(content) || !TYPES.includes(value.type)) throw new Error('记忆内容或类型无效');
-  return { content, tags, type: value.type };
+  return { content, tags, type: value.type, ...validLifecycle(value) };
 }
 
 class MemoryStore {
@@ -231,9 +251,16 @@ class MemoryStore {
     const create = !known && !fs.existsSync(file);
     if (!create) this.checkFile(file);
     if (create && fs.existsSync(path.join(dir, 'backups'))) throw new Error('数据库缺失，请重新定位或恢复备份');
-    const db = openDatabase(file, create);
+    const db = this.connect(file, create);
     this.activate(db, dir);
     return db;
+  }
+
+  connect(file, create = false) {
+    return openDatabase(file, create, (db, version) => {
+      const dir = this.directory(path.join(path.dirname(file), 'backups'), true);
+      this.snapshot(db, dir, 'before-schema-' + version + '-to-' + VERSION);
+    });
   }
 
   checkFile(file) {
@@ -307,7 +334,7 @@ class MemoryStore {
     const file = path.join(dir, FILE);
     this.checkFile(file);
     if (this.db && !path.relative(this.dir, dir)) return;
-    this.activate(openDatabase(file), dir, true);
+    this.activate(this.connect(file), dir, true);
   }
 
   restore(backup, destination) {
@@ -356,7 +383,7 @@ class MemoryStore {
       installed = true;
       fs.unlinkSync(stage);
       if (inspect(target, digest) !== expected) throw new Error('目标数据库内容校验失败');
-      this.activate(openDatabase(target), dir, restoring);
+      this.activate(this.connect(target), dir, restoring);
     } catch (error) {
       if (installed) {
         for (const suffix of suffixes) {
@@ -414,7 +441,9 @@ class MemoryStore {
     if (!['active', 'archived'].includes(state) || !Number.isSafeInteger(offset) || offset < 0 ||
         (type !== '' && !TYPES.includes(type))) throw new Error('筛选参数无效');
     inputText(query, 200, true);
-    return this.open().prepare(`SELECT * FROM memories WHERE archived=?
+    const db = this.open();
+    this.expire(db, Date.now());
+    return db.prepare(`SELECT * FROM memories WHERE archived=?
       AND (? = '' OR type = ?)
       AND instr(lower(content || ' ' || tags || ' ' || type), lower(?)) > 0 ORDER BY updated DESC, id LIMIT 40 OFFSET ?`)
       .all(Number(state === 'archived'), type, type, query, offset);
@@ -428,60 +457,100 @@ class MemoryStore {
   }
 
   put(db, value, source, confidence, replaceConflicts = true) {
+    this.expire(db, Date.now());
     const previous = value.id && db.prepare('SELECT * FROM memories WHERE id=?').get(value.id);
     if (value.id && !previous) throw new Error('该记忆已不存在');
-    const normalized = normalize(value.content);
-    const { key, stance } = preferenceFact(value.content);
-    const matchingFact = key && db.prepare('SELECT * FROM memories WHERE fact_key=? AND archived=0').get(key);
-    if (!replaceConflicts && matchingFact && preferenceFact(matchingFact.content).stance !== stance) return null;
-    const equivalent = matchingFact && preferenceFact(matchingFact.content).stance === stance && matchingFact;
+    const normalized = (value.expires_at ? 'temporary:' : '') + normalize(value.content);
+    const { key, stance } = structuredFact(value.content);
+    const matchingFact = key && !value.expires_at && db.prepare(`SELECT * FROM memories WHERE fact_key=? AND archived=0
+      AND expires_at IS NULL ORDER BY confirmed DESC LIMIT 1`).get(key);
+    if (!replaceConflicts && matchingFact && structuredFact(matchingFact.content).stance !== stance) return null;
+    const equivalent = matchingFact && structuredFact(matchingFact.content).stance === stance && matchingFact;
     const existing = db.prepare('SELECT * FROM memories WHERE normalized=? AND archived=0').get(normalized) || equivalent;
     if (!replaceConflicts && existing) return existing.id;
     const id = existing?.id || previous?.id || randomUUID();
     const now = Date.now();
-    if (key) {
-      const archive = db.prepare('UPDATE memories SET archived=1, updated=? WHERE fact_key=? AND id<>? AND archived=0');
+    if (key && !value.expires_at) {
+      const archive = db.prepare('UPDATE memories SET archived=1, updated=? WHERE fact_key=? AND id<>? AND archived=0 AND expires_at IS NULL');
       if (replaceConflicts) archive.run(now, key, id);
     }
     if (previous && previous.id !== id) db.prepare('UPDATE memories SET archived=1, updated=? WHERE id=?').run(now, previous.id);
-    db.prepare(`INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    const tags = previous ? value.tags : value.tags || existing?.tags || '';
+    db.prepare(`INSERT INTO memories (id,content,normalized,type,tags,source,confidence,fact_key,created,updated,confirmed,archived,importance,expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
       ON CONFLICT(id) DO UPDATE SET content=excluded.content, normalized=excluded.normalized, type=excluded.type,
       tags=excluded.tags, source=excluded.source, confidence=excluded.confidence, fact_key=excluded.fact_key,
-      updated=excluded.updated, confirmed=excluded.confirmed, archived=0`)
-      .run(id, value.content, normalized, value.type, previous ? value.tags : value.tags || existing?.tags || '', previous?.source || existing?.source || source,
-        Math.max(confidence, existing?.confidence || 0), key, previous?.created || existing?.created || now, now, now);
+      updated=excluded.updated, confirmed=excluded.confirmed, archived=0, importance=excluded.importance, expires_at=excluded.expires_at`)
+      .run(id, value.content, normalized, value.type, tags, previous ? source : existing?.source || source,
+        Math.max(confidence, existing?.confidence || 0), key, previous?.created || existing?.created || now, now, now,
+        previous ? value.importance : Math.max(value.importance, existing?.importance || 0), value.expires_at);
+    reindex(db, id, value.content, tags);
     return id;
   }
 
   remove(id) { this.open().prepare('DELETE FROM memories WHERE id=?').run(inputText(id, 80)); }
 
-  search(input) {
-    const query = tokens(inputText(input));
-    if (!query.size) return [];
+  expire(db, now) {
+    db.prepare('UPDATE memories SET archived=1 WHERE archived=0 AND expires_at<=?').run(now);
+  }
+
+  search(input, limit = 4, now = Date.now()) {
+    const query = terms(inputText(input)).slice(0, 80);
+    if (!query.length) return [];
     const db = this.open();
-    const scored = [];
-    for (const row of db.prepare('SELECT id, content, type, tags, confidence, updated, source FROM memories WHERE archived=0').iterate()) {
-      if (SENSITIVE.test(row.content + ' ' + row.tags)) continue;
-      const terms = tokens(row.content + ' ' + row.tags);
-      let relevance = 0;
-      for (const token of query) {
-        if (terms.has(token) && !['我喜欢', '我讨厌', '喜欢', '讨厌', '现在', '以前', '不再', '一直'].includes(token)) {
-          relevance += token.length > 2 ? 2 : 1;
-        }
-      }
-      if (relevance) scored.push({ ...row, relevance });
+    this.expire(db, now);
+    const matched = db.prepare(`SELECT t.term,t.memory_id,count(*) OVER(PARTITION BY t.term) AS frequency
+      FROM memory_terms t JOIN memories m ON m.id=t.memory_id
+      WHERE m.archived=0 AND t.term IN (${query.map(() => '?').join(',')})`).all(...query);
+    const candidates = new Map();
+    for (const match of matched) {
+      const item = candidates.get(match.memory_id) || { score: 0, terms: [] };
+      item.score += (match.term.length >= 3 ? 3 : 1.5) / Math.log2(match.frequency + 1);
+      item.terms.push(match.term);
+      candidates.set(match.memory_id, item);
     }
-    return scored.sort((a, b) => b.relevance - a.relevance || b.confidence - a.confidence || b.updated - a.updated)
-      .slice(0, 4).map(({ id, content, type }) => ({ id, content: content.slice(0, 200), type }));
+    const scored = [];
+    const get = db.prepare('SELECT * FROM memories WHERE id=?');
+    for (const [id, match] of [...candidates].sort((a, b) => b[1].score - a[1].score).slice(0, 160)) {
+      const row = get.get(id);
+      if (SENSITIVE.test(row.content + ' ' + row.tags)) continue;
+      const freshness = Math.max(0, 1 - (now - row.updated) / (90 * DAY));
+      scored.push({ ...row, match: match.terms.slice(0, 6), relevance: match.score + row.importance * 0.3 + row.confidence * 0.5 + freshness * 0.3 });
+    }
+    return scored.sort((a, b) => b.relevance - a.relevance || b.updated - a.updated)
+      .slice(0, limit).map(({ id, content, type, match, source, confirmed }) => ({ id, content: content.slice(0, 200), type, match, source, confirmed }));
+  }
+
+  candidateExcerpts(input) {
+    const eligible = text => !SENSITIVE.test(text) && !TEMPORARY.test(text) && !FICTION.test(text);
+    if (!eligible(input) || /[?？]/.test(input) || input.length < 4 || input.length > 300) return [];
+    const cutoff = Date.now() - 30 * 60000;
+    const rows = this.open().prepare(`SELECT text,created,who FROM messages ORDER BY id DESC LIMIT 8`).all();
+    if (rows[0]?.who !== 'user' || rows[0].text !== input) return [];
+    return rows.filter(row => row.who === 'user' && row.created >= cutoff && row.text.length <= 300 && eligible(row.text))
+      .slice(0, 3).reverse().map(row => row.text);
+  }
+
+  claimExtraction(now) {
+    const db = this.open();
+    const key = 'semantic-extraction-budget';
+    const row = db.prepare('SELECT value FROM metadata WHERE key=?').get(key);
+    const recent = (row ? JSON.parse(row.value) : []).filter(at => now - at < DAY);
+    if (recent.length >= 6 || now - (recent.at(-1) ?? -Infinity) < 600000) return false;
+    db.prepare('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+      .run(key, JSON.stringify([...recent, now]));
+    return true;
   }
 
   exportMemories() {
-    return { format: 'chieri-memory', version: 1, memories: this.open().prepare(
-      'SELECT content, type, tags FROM memories WHERE archived=0 ORDER BY created, id').all() };
+    const db = this.open();
+    this.expire(db, Date.now());
+    return { format: 'chieri-memory', version: 2, memories: db.prepare(
+      'SELECT content, type, tags, importance, expires_at FROM memories WHERE archived=0 ORDER BY created, id').all() };
   }
 
   importMemories(data) {
-    if (data?.format !== 'chieri-memory' || data.version !== 1 || !Array.isArray(data.memories) || data.memories.length > 10000) {
+    if (data?.format !== 'chieri-memory' || ![1, 2].includes(data.version) || !Array.isArray(data.memories) || data.memories.length > 10000) {
       throw new Error('记忆文件格式或版本无效');
     }
     const entries = data.memories.map(validateMemory);
@@ -501,4 +570,4 @@ class MemoryStore {
   }
 }
 
-module.exports = { MemoryStore, extraction, writeAtomic };
+module.exports = { MemoryStore, extraction, writeAtomic, validateMemory };

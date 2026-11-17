@@ -263,7 +263,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   loadSettings();
-  const memory = require('./memory-ipc')(ownedWindow, ROOT);
+  const memory = require('./memory-ipc')(ownedWindow, ROOT, () => settings);
   addMemoryContext = memory.addMemoryContext;
   companion = require('./companion-ipc')({ store: memory.store, trustedWindow, activeWindow: () => pet || studio, settings: () => settings });
   stopVision = require('./vision-ipc')(trustedWindow, () => pet || studio);

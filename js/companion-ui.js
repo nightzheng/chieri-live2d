@@ -83,29 +83,37 @@ const CompanionUI = {
   },
   async loadOptions() {
     const p = await this.call('options');
-    for (const [key, value] of Object.entries({ Enabled: p.enabled, AI: p.ai, Memory: p.memory, Voice: p.voice })) $('#p' + key).checked = value;
-    for (const [key, value] of Object.entries({ Frequency: p.frequency, Min: p.min, QuietFrom: p.quietFrom, QuietTo: p.quietTo, Limit: p.limit })) {
+    for (const [key, value] of Object.entries({ Enabled: p.enabled, AI: p.ai, Memory: p.memory, Voice: p.voice, Adaptive: p.adaptive })) $('#p' + key).checked = value;
+    for (const [key, value] of Object.entries({ Frequency: p.frequency, Min: p.min, QuietFrom: p.quietFrom, QuietTo: p.quietTo,
+      Limit: p.limit, Strength: p.strength, Manual: p.manual })) {
       $('#p' + key).value = value;
     }
     $('#pFrequency').onchange();
+    await this.refreshState();
   },
-  async configure(pause = false) {
-    const options = pause ? { ...await this.call('options'), enabled: false } : {
+  async refreshState() {
+    const p = await this.call('status', { busy: this.busy(), recording: Rec.on });
+    const label = p.state + ' · ' + p.reason + (p.lastSpoken ? ' · 上次主动发言 ' + new Date(p.lastSpoken).toLocaleString() : '');
+    if ($('#pState').textContent !== label) $('#pState').textContent = label;
+  },
+  async configure(mode = '') {
+    const options = mode ? { ...await this.call('options'), manual: mode } : {
       enabled: $('#pEnabled').checked, ai: $('#pAI').checked, memory: $('#pMemory').checked, voice: $('#pVoice').checked,
       frequency: $('#pFrequency').value, min: +$('#pMin').value, limit: +$('#pLimit').value,
       quietFrom: $('#pQuietFrom').value, quietTo: $('#pQuietTo').value,
+      adaptive: $('#pAdaptive').checked, strength: $('#pStrength').value, manual: $('#pManual').value,
     };
     await this.call('configure', options);
-    if (pause && Voice.currentKind === 'proactive') Voice.interrupt();
+    if (Voice.currentKind === 'proactive' && (!options.enabled || options.manual !== 'normal')) Voice.interrupt();
     await this.loadOptions();
-    $('#pFeedback').textContent = pause ? '已暂停主动闲聊，日程提醒继续运行' : '设置已保存';
+    $('#pFeedback').textContent = mode === 'quiet' ? '已暂停主动闲聊，日程提醒继续运行' : '设置已保存';
   },
-  activity() {
+  activity(kind = 'touch') {
     if (Voice.currentKind === 'proactive') Voice.interrupt();
     const now = Date.now();
-    if (!window.petAPI || now - this.activityAt < 1000) return;
+    if (!window.petAPI || (kind !== 'chat' && now - this.activityAt < 1000)) return;
     this.activityAt = now;
-    this.call('activity').catch(() => {});
+    this.call('activity', kind).catch(() => {});
   },
   busy() {
     return Chat.sending || AI.interacting > 0 || Voice.pending > 0 || Voice.playing;
@@ -123,6 +131,7 @@ const CompanionUI = {
       if (response?.missed) toast(`错过了 ${response.missed} 条提醒，可在「提醒与日程」查看`, 5500);
       if (response?.reminder) this.queued = response.reminder;
       if (response?.proactive && !this.busy()) this.speak(response.proactive);
+      if (!$('#settings').classList.contains('hidden')) await this.refreshState();
     } catch (_) {
       // The storage panel provides the error and recovery controls.
     } finally { this.polling = false; }
@@ -139,21 +148,22 @@ const CompanionUI = {
     const startingActivity = this.activityAt;
     const hour = new Date().getHours();
     const choices = [
-      ['要不要伸个懒腰？我才没有在催你呢。', 'ちょっと伸びをしませんか？別に急かしてるわけじゃないです。'],
-      ['我在这里陪你哦。有想聊的就说吧。', 'ここにいますよ。話したいことがあれば聞きます。'],
-      hour < 12 ? ['早上好呀，今天也按自己的节奏来吧。', 'おはようございます。今日も自分のペースでいきましょう。']
-        : ['你今天过得怎么样？我只是随口问问啦。', '今日はどうでしたか？ちょっと聞いただけですよ。'],
-    ].filter(([line]) => line !== this.lastLine);
-    let [reply, ja] = pick(choices), emotion = 'gentle';
+      ['休息', '要不要伸个懒腰？我才没有在催你呢。', 'ちょっと伸びをしませんか？別に急かしてるわけじゃないです。'],
+      ['话题', '我在这里陪你哦。有想聊的就说吧。', 'ここにいますよ。話したいことがあれば聞きます。'],
+      hour < 12 ? ['问候', '早上好呀，今天也按自己的节奏来吧。', 'おはようございます。今日も自分のペースでいきましょう。']
+        : ['问候', '你今天过得怎么样？我只是随口问问啦。', '今日はどうでしたか？ちょっと聞いただけですよ。'],
+    ].filter(([category]) => category !== this.lastCategory);
+    let [category, reply, ja] = pick(choices), emotion = 'gentle';
     try {
       if (options.ai && AI.ready()) {
         try {
           const time = hour < 12 ? '上午' : hour < 18 ? '下午' : '晚上';
           const out = AI.parse(await AI.complete(AI.systemPrompt(aiState()) +
-            '\n这是主动打招呼。只说一句，可以问候、关心或聊用户明确保存的兴趣。你没有屏幕信息，不能声称看到对方的活动。',
+            '\n这是主动打招呼。只说一句。主题限定为' + category + '，避免重复上一次主题。你没有屏幕信息，不推断用户的情绪、健康或正在做什么。',
           [{ role: 'user', content: '请在' + time + '和我轻松打个招呼。' }],
           { timeout: 15000, maxTokens: 240, proactive: options.ticket }));
-          if (out.reply !== '……' && !/(?:我|刚)(?:刚才|刚刚)?(?:看见|看到|看着|注意到你正在)/.test(out.reply)) {
+          const unsupported = /(?:我|刚)(?:刚才|刚刚)?(?:看见|看到|看着|注意到你正在)|你(?:一定|肯定|明显|看起来)(?:很|有点)?(?:累|难过|疲惫|生病|不舒服)/;
+          if (out.reply !== '……' && out.reply !== this.lastLine && !unsupported.test(out.reply)) {
             reply = out.reply.slice(0, 100);
             ja = out.ja || 'こんにちは。少しお話ししませんか？';
             emotion = out.emotion || emotion;
@@ -161,8 +171,10 @@ const CompanionUI = {
         } catch (_) {}
       }
       if (this.busy() || Rec.on || this.queued || startingActivity !== this.activityAt ||
-          !await this.call('canSpeak', true) || this.busy() || startingActivity !== this.activityAt) return;
+          !await this.call('canSpeak', options.ticket) || this.busy() || Rec.on || this.queued || startingActivity !== this.activityAt ||
+          !await this.call('spoken', options.ticket) || this.busy() || Rec.on || this.queued || startingActivity !== this.activityAt) return;
       this.lastLine = reply;
+      this.lastCategory = category;
       say(reply, emotion, null, { kind: 'proactive', voice: options.voice, ja });
     } catch (_) {} finally { this.talking = false; }
   },
@@ -187,7 +199,8 @@ const CompanionUI = {
     });
     $('#pFrequency').onchange = () => { $('#pMin').disabled = $('#pFrequency').value !== 'custom'; };
     $('#pSave').onclick = () => this.task('#pFeedback', () => this.configure());
-    $('#pPause').onclick = () => this.task('#pFeedback', () => this.configure(true));
+    $('#pPause').onclick = () => this.task('#pFeedback', () => this.configure('quiet'));
+    $('#pResume').onclick = () => this.task('#pFeedback', () => this.configure('normal'));
     // Only keep the time of input in Chieri. No keys or text are inspected or persisted.
     for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => this.activity(), true);
     window.petAPI.onAgenda(() => this.showAgenda());

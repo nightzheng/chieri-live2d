@@ -107,9 +107,9 @@ test('D01 schema v1 upgrades transactionally with existing messages and memory',
   const { store, agenda } = data(t);
   store.append('user', '旧聊天', 'old-chat');
   store.save({ type: '兴趣', content: '旧兴趣', tags: '' });
-  store.open().exec('DROP TABLE reminder_events; DROP TABLE reminders; DROP TABLE proactive; PRAGMA user_version=1');
+  store.open().exec('DROP TABLE reminder_events; DROP TABLE reminders; DROP TABLE proactive; DROP TABLE memory_terms; DROP INDEX memories_expiry; ALTER TABLE memories DROP COLUMN expires_at; ALTER TABLE memories DROP COLUMN importance; PRAGMA user_version=1');
   store.close();
-  assert.equal(store.open().prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(store.open().prepare('PRAGMA user_version').get().user_version, 3);
   assert.equal(store.history()[0].text, '旧聊天');
   assert.equal(store.list()[0].content, '旧兴趣');
   assert.deepEqual(agenda.list().reminders, []);
@@ -119,7 +119,7 @@ test('schema migration failure rolls back earlier DDL and leaves the old version
   const { store } = data(t);
   store.append('user', '保留的聊天', 'original');
   const file = store.status().file;
-  store.open().exec(`DROP TABLE reminder_events; DROP TABLE reminders; DROP TABLE proactive;
+  store.open().exec(`DROP TABLE reminder_events; DROP TABLE reminders; DROP TABLE proactive; DROP TABLE memory_terms; DROP INDEX memories_expiry; ALTER TABLE memories DROP COLUMN expires_at; ALTER TABLE memories DROP COLUMN importance;
     CREATE TABLE reminder_events (collision INTEGER); PRAGMA user_version=1`);
   store.close();
   assert.match(store.status().error, /already exists/);

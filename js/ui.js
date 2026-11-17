@@ -99,6 +99,11 @@ const Chat = {
     finally { this.sending = false; button.disabled = false; }
   },
   async respond(text) {
+    if (DESKTOP) {
+      CompanionUI.activity('chat');
+      const feedback = await CompanionUI.call('command', text).catch(() => null);
+      if (feedback) { this.card('happy', feedback); return; }
+    }
     if (DESKTOP && VisionUI.handleChat(text)) return;
     const conversation = DESKTOP ? crypto.randomUUID() : null;
     touch(); this.add('user', text);

@@ -5,14 +5,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { Agenda, calendar, nextOccurrence, parseReminder } = require('./agenda');
-const { Proactive, quiet } = require('./proactive');
+const { Proactive, command } = require('./proactive');
 
 module.exports = function companion({ store, trustedWindow, activeWindow, settings }) {
   const reminders = new Agenda(() => store.open());
   const proactive = new Proactive(() => store.open());
   const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
   const notifications = new Map();
-  let ticket, locked = false, activity = Date.now(), pendingDb, suspended = false, announcedMissed = 0;
+  let ticket, delivery, locked = false, activity = Date.now(), pendingDb, suspended = false, announcedMissed = 0;
+  const invalidate = () => { ticket = delivery = null; };
+  const presence = (busy = false, recording = false) => ({ now: Date.now(), zone: zone(), idle: Date.now() - activity,
+    locked: locked || suspended, busy, recording: recording || !!settings().rec?.on, reminder: !!reminders.pending() });
 
   function showNotice(event) {
     if (!event.notify || !Notification.isSupported()) return;
@@ -39,16 +42,16 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       const db = store.open();
       const first = db !== pendingDb;
       pendingDb = db;
-      if (first) { reminders.recoverPending(); announcedMissed = 0; }
+      if (first) { reminders.recoverPending(); proactive.reset(); invalidate(); announcedMissed = 0; }
       for (const row of reminders.tick(Date.now(), missed || first)) showNotice(row);
     } catch (_) {
       // The memory panel surfaces unavailable data and recovery actions.
     }
   }
 
-  powerMonitor.on('lock-screen', () => { locked = true; ticket = null; });
+  powerMonitor.on('lock-screen', () => { locked = true; invalidate(); });
   powerMonitor.on('unlock-screen', () => { locked = false; activity = Date.now(); });
-  powerMonitor.on('suspend', () => { suspended = true; ticket = null; });
+  powerMonitor.on('suspend', () => { suspended = true; invalidate(); });
   powerMonitor.on('resume', () => { suspended = false; activity = Date.now(); tick(true); });
   const timer = setInterval(tick, 3000);
   tick(true);
@@ -101,12 +104,45 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       return reminders.import(parsed, Date.now());
     },
     options: () => proactive.options(),
-    configure: (_, value) => { ticket = null; return proactive.configure(value, Date.now()); },
-    activity: () => { activity = Date.now(); ticket = null; },
-    canSpeak(win) {
+    configure: (_, value) => { invalidate(); proactive.temporary('normal', 0, Date.now()); return proactive.configure(value, Date.now()); },
+    status: (_, value) => proactive.status(presence(value?.busy === true, value?.recording === true)),
+    activity: (_, kind) => {
+      activity = Date.now();
+      proactive.feedback(kind, activity);
+      invalidate();
+    },
+    async command(win, text) {
+      const intent = command(text);
+      if (!intent) return null;
+      invalidate();
       const now = Date.now(), options = proactive.options();
-      return win === activeWindow() && !locked && !suspended && !settings().rec?.on && now - activity >= 3 * 60000 &&
-        options.enabled && !quiet(calendar(now, zone()).time, options) && !reminders.pending();
+      if (intent.frequency) {
+        const increase = intent.frequency === 'occasional';
+        const frequency = increase ? 'occasional' : ({ frequent: 'medium', medium: 'occasional' })[options.frequency] || 'custom';
+        const min = !increase && frequency === 'custom' ? Math.min(1440, Math.max(90, options.min + 15)) : options.min;
+        const result = await dialog.showMessageBox(win, { message: '保存新的主动互动频率？',
+          detail: frequency === 'custom' ? '最小间隔 ' + min + ' 分钟' : frequency === 'medium' ? '20–40 分钟' : '45–90 分钟',
+          buttons: ['取消', '保存'], defaultId: 0, cancelId: 0 });
+        if (result.response !== 1 || win.isDestroyed()) return '未更改主动互动设置。';
+        proactive.configure({ ...proactive.options(), enabled: increase || options.enabled, frequency, min }, Date.now());
+        return '已保存新的主动互动频率。';
+      }
+      proactive.temporary(intent.mode, intent.minutes, now);
+      if (intent.mode === 'normal') {
+        if (options.manual !== 'normal') proactive.configure({ ...options, manual: 'normal' }, now);
+        return '可以聊天了。主动闲聊仍按你的开关和安静时段运行。';
+      }
+      return '接下来 ' + intent.minutes + ' 分钟暂停普通闲聊，日程提醒照常。';
+    },
+    canSpeak(win, id) {
+      return delivery?.win === win && delivery.id === id && Date.now() < delivery.expires && win === activeWindow() &&
+        !proactive.status(presence()).blocked;
+    },
+    spoken(win, id) {
+      if (delivery?.win !== win || delivery.id !== id || proactive.status(presence()).blocked) return false;
+      delivery = null;
+      proactive.spoken(Date.now());
+      return true;
     },
     poll(win, value) {
       if (typeof value?.busy !== 'boolean' || typeof value.recording !== 'boolean' || typeof value.proactiveBusy !== 'boolean' || win !== activeWindow() ||
@@ -123,6 +159,7 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       const next = proactive.claim({ now, zone: zone(), idle: now - activity, busy: value.proactiveBusy, locked, recording: value.recording || !!settings().rec?.on });
       if (!next) return missed ? { missed } : null;
       ticket = { id: randomUUID(), win, expires: now + 20000 };
+      delivery = { ...ticket, expires: now + 30000 };
       return { proactive: { ai: next.ai, voice: next.voice, ticket: ticket.id }, missed };
     },
   };
@@ -134,15 +171,16 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
 
   return {
     useTicket(win, id) {
-      if (!ticket || ticket.win !== win || ticket.id !== id || ticket.expires < Date.now() || locked || suspended) return null;
+      if (!ticket || ticket.win !== win || ticket.id !== id || ticket.expires < Date.now() || proactive.status(presence()).blocked) return null;
       ticket = null;
       const options = proactive.options();
       return options.enabled && options.ai ? { memory: options.memory } : null;
     },
     pause() {
       const options = proactive.options();
-      proactive.configure({ ...options, enabled: false }, Date.now());
-      ticket = null;
+      proactive.temporary('normal', 0, Date.now());
+      proactive.configure({ ...options, manual: 'quiet' }, Date.now());
+      invalidate();
       activeWindow()?.webContents.send('companion:paused');
     },
   };

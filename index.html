@@ -226,10 +226,15 @@
           <label class="f"><span>每日上限</span><input type="number" id="pLimit" min="1" max="24"></label>
           <label class="sw"><input type="checkbox" id="pAI"><i></i>用聊天模型生成主动台词</label>
           <label class="sw"><input type="checkbox" id="pMemory"><i></i>允许给聊天模型附带相关长期记忆</label>
+          <label class="sw"><input type="checkbox" id="pAdaptive"><i></i>根据回应调整主动频率</label>
+          <label class="f"><span>调节强度</span><select id="pStrength"><option value="gentle">轻度</option><option value="medium">适中</option><option value="strong">明显</option></select></label>
+          <label class="f"><span>陪伴偏好</span><select id="pManual"><option value="normal">日常</option><option value="quiet">保持安静</option><option value="focus">保持专注</option></select></label>
+          <p class="note" id="pState" aria-live="polite"></p>
           <label class="sw"><input type="checkbox" id="pVoice"><i></i>同时朗读主动台词</label>
           <div class="row2 wrap">
             <button type="button" class="mini" id="pSave">保存主动互动设置</button>
             <button type="button" class="mini" id="pPause">立即暂停</button>
+            <button type="button" class="mini" id="pResume">恢复陪伴</button>
           </div>
           <p class="note" id="pFeedback" role="status"></p>
         </fieldset>
@@ -280,7 +285,10 @@
         <fieldset class="desk-only" id="memorySettings">
           <legend>记忆与数据</legend>
           <label class="sw"><input type="checkbox" id="mEnabled"><i></i>启用长期记忆保存和 AI 对话引用</label>
-          <label class="sw"><input type="checkbox" id="mAuto"><i></i>从我的聊天中自动识别候选，经确认后保存</label>
+          <label class="f"><span>候选提取</span><select id="mAuto"><option value="off">关闭自动提取</option><option value="rules">本地规则</option><option value="ai">AI 辅助</option></select></label>
+          <p class="note">AI 辅助会给已配置的聊天服务额外发送最多三条近期用户消息。每 10 分钟最多一次，每 24 小时最多六次；候选仍需确认。</p>
+          <label class="f"><span>引用条数</span><select id="mLimit"><option>2</option><option>4</option><option>6</option><option>8</option></select></label>
+          <label class="f"><span>引用字节</span><select id="mBudget"><option>700</option><option>1400</option><option>2100</option><option>2800</option></select></label>
           <p class="note">记忆和聊天保存在本机。开启长期记忆后，相关记忆会随聊天请求发送给你配置的 AI 服务。候选识别在本机完成。 数据库备份包含聊天原文，请妥善保管。</p>
           <p class="note" id="mStatus" role="status"></p>
           <p class="note" id="mFeedback" role="status"></p>
@@ -312,6 +320,8 @@
             <label class="f"><span>记忆内容</span><textarea id="mContent" maxlength="1000" rows="3"></textarea></label>
             <label class="f"><span>类型</span><select id="mType"><option>事实</option><option>偏好</option><option>兴趣</option><option>事项</option><option>约定</option><option>关系</option><option>其他</option></select></label>
             <label class="f"><span>标签</span><input id="mTags" maxlength="200"></label>
+            <label class="f"><span>重要性</span><select id="mImportance"><option value="1">一般</option><option value="2">常用</option><option value="3">重要</option></select></label>
+            <label class="f"><span>有效至</span><input id="mExpiry" type="datetime-local" aria-label="有效至，留空表示不限时"></label>
             <div class="row2 wrap">
               <button type="button" class="mini" id="mSave">添加记忆</button>
               <button type="button" class="mini hidden" id="mCancel">取消编辑</button>

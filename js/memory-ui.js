@@ -25,10 +25,12 @@ const MemoryUI = {
     const status = await this.request('status');
     $('#mStatus').textContent = status.file + (status.error ? ' · ' + status.error : ' · ' + status.count + ' 条当前记忆');
     $('#mEnabled').checked = status.enabled;
-    $('#mAuto').checked = status.auto;
+    $('#mAuto').value = status.mode;
+    $('#mLimit').value = status.limit;
+    $('#mBudget').value = status.budget;
     const rows = status.lastUsed.map(row => {
       const el = document.createElement('li');
-      el.textContent = row.content;
+      el.textContent = row.content + (row.match?.length ? ' · 匹配 ' + row.match.join('、') : ' · 主动陪伴选用');
       return el;
     });
     if (!rows.length) {
@@ -48,8 +50,21 @@ const MemoryUI = {
   async propose(text) {
     try {
       const proposal = await this.request('propose', text);
-      if (!proposal) return;
-      if (!window.confirm('保存为长期记忆？\n\n' + proposal.content + '\n\n如果已有同一偏好的旧说法，它会被归档。')) return;
+      if (!proposal) {
+        this.request('semantic', text).then(candidate => {
+          if (!candidate) return;
+          Chat.card('happy', '识别到一条记忆候选：' + candidate.content, ['确认或忽略', async () => {
+            if (!window.confirm('保存这条 AI 候选？请核对是否准确。\n\n' + candidate.content)) return;
+            try {
+              await this.request('confirmSemantic', candidate.token);
+              Chat.card('happy', '已保存长期记忆。');
+            } catch (_) { Chat.card('pout', '候选已失效或无法保存。'); }
+          }]);
+        }).catch(() => {});
+        return;
+      }
+      const expiry = proposal.expires_at ? '\n有效至 ' + new Date(proposal.expires_at).toLocaleString() : '';
+      if (!window.confirm('保存为长期记忆？\n\n' + proposal.content + expiry + '\n\n更新同一长期偏好时，旧说法会归档。')) return;
       await this.request('remember', text);
       Chat.card('happy', '已保存长期记忆。');
     } catch (_) { Chat.card('pout', '未能保存长期记忆。请检查记忆与数据设置。'); }
@@ -74,6 +89,9 @@ const MemoryUI = {
     $('#mContent').value = row?.content ?? '';
     $('#mType').value = row?.type ?? '事实';
     $('#mTags').value = row?.tags ?? '';
+    $('#mImportance').value = row?.importance ?? 2;
+    const time = row?.expires_at ? new Date(row.expires_at) : null;
+    $('#mExpiry').value = time ? new Date(+time - time.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
     $('#mSave').textContent = row ? '保存修改' : '添加记忆';
     $('#mCancel').classList.toggle('hidden', !row);
     if (row) $('#mContent').focus();
@@ -83,7 +101,8 @@ const MemoryUI = {
     $('#mPrev').disabled = this.offset === 0;
     $('#mNext').disabled = rows.length < 40;
     $('#mList').replaceChildren(...rows.map(row => this.row(row.content,
-      [row.type, row.tags, new Date(row.updated).toLocaleDateString()].filter(Boolean).join(' · '), [
+      [row.type, row.tags, ({ manual: '手动', explicit: '明确保存', candidate: '规则候选已确认', semantic: 'AI 候选已确认', import: '导入' })[row.source],
+        row.expires_at && '有效至 ' + new Date(row.expires_at).toLocaleString(), new Date(row.confirmed).toLocaleDateString()].filter(Boolean).join(' · '), [
         this.button(row.archived ? '编辑并恢复' : '编辑', () => this.edit(row)),
         this.button('删除', () => this.run(async () => {
           if (!window.confirm('删除这条长期记忆？')) return;
@@ -112,8 +131,8 @@ const MemoryUI = {
   },
   init() {
     if (!window.petAPI) return;
-    $('#mEnabled').onchange = $('#mAuto').onchange = () => this.run(async () => {
-      await this.request('options', { enabled: $('#mEnabled').checked, auto: $('#mAuto').checked });
+    $('#mEnabled').onchange = $('#mAuto').onchange = $('#mLimit').onchange = $('#mBudget').onchange = () => this.run(async () => {
+      await this.request('options', { enabled: $('#mEnabled').checked, mode: $('#mAuto').value, limit: +$('#mLimit').value, budget: +$('#mBudget').value });
       await this.refresh();
     });
     $('#mSearch').onclick = $('#mFilter').onchange = $('#mTypeFilter').onchange = () => this.run(async () => { this.offset = 0; await this.list(); });
@@ -121,7 +140,8 @@ const MemoryUI = {
     $('#mNext').onclick = () => this.run(async () => { this.offset += 40; await this.list(); });
     $('#mCancel').onclick = () => this.edit();
     $('#mSave').onclick = () => this.run(async () => {
-      await this.request('save', { id: this.id, content: $('#mContent').value, type: $('#mType').value, tags: $('#mTags').value });
+      await this.request('save', { id: this.id, content: $('#mContent').value, type: $('#mType').value, tags: $('#mTags').value,
+        importance: +$('#mImportance').value, expires_at: $('#mExpiry').value ? Date.parse($('#mExpiry').value) : null });
       this.edit(); this.offset = 0; $('#mFilter').value = 'active'; $('#mTypeFilter').value = '';
       await this.refresh();
       $('#mFeedback').textContent = '记忆已保存';

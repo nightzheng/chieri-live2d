@@ -34,11 +34,11 @@ try {
   old.close();
   assert.equal(agenda.list().reminders[0].title, '1.2.9 合成提醒');
   current.restore(legacyBackup);
-  assert.equal(current.open().prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(current.open().prepare('PRAGMA user_version').get().user_version, 3);
   assert.equal(current.history()[0].text, '1.2.8 聊天');
   assert.equal(current.list()[0].content, '1.2.8 记忆');
   assert.deepEqual(agenda.list().reminders, []);
-  console.log('Actual 1.2.8 schema migrated; 1.2.8 refused schema 2 and left it intact; 1.2.8 backup restored and migrated.');
+  console.log('Actual 1.2.8 schema migrated; 1.2.8 refused schema 3 and left it intact; 1.2.8 backup restored and migrated.');
 } finally {
   old.close();
   current.close();
