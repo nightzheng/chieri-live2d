@@ -129,6 +129,24 @@ async function run() {
   assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 0);
   await js("window.confirm = () => true; MemoryUI.propose('我喜欢骑自行车')");
   assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 1);
+  assert.equal(await js("document.querySelector('#aZone').tagName"), 'SELECT');
+  await js(`(async () => {
+    for (let i = 0; i < 13; i++) await petAPI.memory('save', {content:'样本记忆 ' + i, type:'事实', tags:''});
+    await petAPI.memory('append', {who:'user', text:'原始问句', conversation:'manage-test'});
+    await petAPI.memory('append', {who:'bot', text:'旧的测试回答', conversation:'manage-test'});
+    document.querySelector('#mManager').click();
+  })()`);
+  const manager = await until(() => BrowserWindow.getAllWindows().find(w => w !== win && w.webContents.getURL().endsWith('data-manager.html')));
+  const data = code => manager.webContents.executeJavaScript(code);
+  await until(() => data("document.querySelectorAll('#mList article').length === 12"));
+  await data("document.querySelector('#mNext').click()");
+  await until(() => data("document.querySelectorAll('#mList article').length === 2"));
+  await data("document.querySelector('[data-panel=historyPanel]').click()");
+  await until(() => data("document.querySelector('#mHistory article')?.textContent.includes('旧的测试回答')"));
+  await data("document.querySelector('#mChatQuery').value = '原始问句'; document.querySelector('#mChatSearch').click()");
+  await until(() => data("!MemoryUI.running && document.querySelectorAll('#mHistory article').length === 1"));
+  assert.match(await data("document.querySelector('#mHistory article').textContent"), /原始问句.*旧的测试回答/s);
+  await assert.rejects(data("dataAPI.memory('options', {enabled:false})"), /记忆操作来源无效/);
   console.log(mode + ' settings passed font, clipping, navigation and memory confirmation checks');
 }
 

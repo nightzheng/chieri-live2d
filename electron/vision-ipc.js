@@ -4,15 +4,22 @@ const { app, ipcMain, BrowserWindow, desktopCapturer, powerMonitor, dialog, nati
 const fs = require('node:fs');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-const { DEFAULTS, INTERVALS, PROACTIVE_DURATIONS, MAX_IMAGE, VisionFlow, validateConfig, parseRequest } = require('./vision');
+const { DEFAULTS, INTERVALS, MAX_IMAGE, VisionFlow, validateConfig, parseRequest, isPrivate } = require('./vision');
 const { writeAtomic } = require('./memory-store');
 
 module.exports = function registerVision(trustedWindow, activeWindow, proactivePolicy, chatTarget) {
   const file = path.join(app.getPath('userData'), 'vision-settings.json');
+  const grantFile = path.join(app.getPath('userData'), 'proactive-screen.json');
   const supported = process.platform === 'win32';
   const windows = () => BrowserWindow.getAllWindows().filter(win => !win.isDestroyed());
   let config = { ...DEFAULTS, key: '' }, configError = '', inventory, owner, confirming = false, locked = false;
   let encryptedKey = '', saving = false;
+  let grant;
+  try {
+    const value = JSON.parse(fs.readFileSync(grantFile, 'utf8'));
+    if (/^(screen|window):/.test(value?.source?.id) && typeof value.source.name === 'string' &&
+        typeof value.source.display === 'string' && typeof value.chat === 'string' && typeof value.vision === 'string') grant = value;
+  } catch (_) {}
   const monitored = new WeakSet();
   const ready = (async () => {
     try {
@@ -46,7 +53,7 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
   }
 
   const ourIds = () => new Set(windows().map(win => win.getMediaSourceId()));
-  async function capture(source, options) {
+  async function capture(source, options, proactive = false) {
     if (!allowed()) throw new Error('截图权限已暂停');
     const protectedWindows = windows().filter(win => !win.isContentProtected());
     try {
@@ -55,8 +62,21 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
       if (!allowed()) throw new Error('截图权限已暂停');
       const types = [source.id.startsWith('window:') ? 'window' : 'screen'];
       const own = ourIds();
+      const eligible = entry => !own.has(entry.id);
+      const blocked = async () => {
+        if (!proactive) return false;
+        const titles = types[0] === 'screen' ? await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 } }) : [source];
+        if (titles.some(entry => eligible(entry) && isPrivate(entry.name, options.privateWords))) {
+          flow.error = '检测到隐私窗口，已跳过这次截图';
+          return true;
+        }
+        return false;
+      };
+      if (await blocked() || !allowed()) return null;
       const entries = await desktopCapturer.getSources({ types, thumbnailSize: { width: options.size, height: options.size } });
-      const selected = entries.find(entry => entry.id === source.id && entry.name === source.name && !own.has(entry.id));
+      if (proactive && types[0] === 'screen' && await blocked()) return null;
+      const selected = entries.find(entry => entry.id === source.id && entry.name === source.name && eligible(entry) &&
+        (entry.display_id || '') === source.display);
       if (!selected || selected.thumbnail.isEmpty()) throw new Error('共享来源已关闭、更名或不可捕获');
       let jpeg = selected.thumbnail.toJPEG(options.quality);
       if (jpeg.length > MAX_IMAGE) jpeg = selected.thumbnail.resize({ width: 768 }).toJPEG(55);
@@ -72,9 +92,12 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
   const flow = new VisionFlow({ capture, notify: broadcast });
   const state = () => {
     const { key, ...publicConfig } = config;
-    return { ...flow.status(), config: { ...publicConfig, hasKey: !!key }, supported, configError };
+    return { ...flow.status(), savedSource: matchesGrant() ? grant.source : null, config: { ...publicConfig, hasKey: !!key }, supported, configError };
   };
+  const visionTarget = () => JSON.stringify([config.base, config.model, config.provider]);
+  const matchesGrant = () => grant && config.enabled && grant.vision === visionTarget() && grant.chat === chatTarget();
   const revoke = reason => { inventory = null; flow.stop(reason); };
+  const forget = () => { fs.rmSync(grantFile, { force: true }); grant = undefined; revoke('已撤销主动观察授权'); };
   const onLock = () => { locked = true; revoke('屏幕锁定或休眠，视觉权限已停止'); };
   powerMonitor.on('lock-screen', onLock);
   powerMonitor.on('suspend', onLock);
@@ -153,20 +176,22 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
     async sources(win, kind) {
       check(win);
       if (!['screen', 'window'].includes(kind)) throw new Error('需要选择显示器或窗口');
-      if (flow.observation || flow.busy) throw new Error('请先停止当前观察');
       const epoch = flow.generation;
       const entries = await desktopCapturer.getSources({ types: [kind], thumbnailSize: { width: 0, height: 0 } });
       check(win);
       if (epoch !== flow.generation) throw new Error('截图已取消');
       const own = ourIds();
-      const sources = entries.filter(entry => !own.has(entry.id)).slice(0, 100).map(({ id, name }) => ({ id, name }));
-      inventory = { win, sources, at: Date.now() };
+      const sources = entries.filter(entry => !own.has(entry.id)).slice(0, 100)
+        .map(({ id, name, display_id }) => ({ id, name, display: display_id || '' }));
+      if (inventory?.win !== win) inventory = { win };
+      inventory[kind] = { sources, at: Date.now() };
       return sources;
     },
     async preview(win, value) {
       check(win);
-      const source = inventory?.win === win && Date.now() - inventory.at < 120000 &&
-        inventory.sources.find(item => item.id === value?.id);
+      if (flow.observation?.mode === 'proactive') flow.stop();
+      const selection = inventory?.win === win && inventory[value?.id?.split(':')[0]];
+      const source = selection && Date.now() - selection.at < 120000 && selection.sources.find(item => item.id === value?.id);
       if (!source) throw new Error('请刷新范围并重新选择');
       return flow.stage(win, source, parseRequest(value.question), config);
     },
@@ -176,16 +201,20 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
       check(win);
       const { source } = flow.inspect(win, value?.token);
       const policy = proactivePolicy(), chat = chatTarget(), selected = config;
-      if (!policy || !chat) throw new Error('请先保存主动闲聊、AI 台词和看屏幕选项');
-      if (!PROACTIVE_DURATIONS.includes(value.duration)) throw new Error('观察时长无效');
-      const approved = await confirm(win, '授权本次主动观察？',
-        `范围：${source.name}\n时长：${value.duration} 分钟\n每 ${policy.visionEvery} 次主动闲聊查看一次\n图片发送到：${config.base}\n简短描述发送到聊天服务：${chat}\n开启朗读时，回复可能由已选语音服务朗读。可以随时停止，请避开敏感内容。`);
+      if (!policy || !chat) throw new Error('请先保存主动闲聊、AI 台词、看屏幕选项和聊天 API');
+      const approved = await confirm(win, '记住主动观察授权？',
+        `范围：${source.name}\n每 ${policy.visionEvery} 次主动闲聊查看一次\n图片发送到：${config.base}\n简短描述发送到聊天服务：${chat}\n授权在重启后仍有效，可随时撤销。隐私关键词只能过滤窗口标题和识别结果，请避开敏感画面。`);
       if (!approved) return null;
       check(win);
       if (selected !== config || chatTarget() !== chat || proactivePolicy()?.visionEvery !== policy.visionEvery) throw new Error('设置已变更，请重新授权');
-      flow.beginProactive(win, value.token, config, { duration: value.duration, every: policy.visionEvery, chat });
+      flow.inspect(win, value.token);
+      const next = { source, chat, vision: visionTarget() };
+      writeAtomic(grantFile, next);
+      grant = next;
+      flow.beginProactive(win, value.token, config, { every: policy.visionEvery, chat });
       return true;
     },
+    forget,
     stop() { revoke('视觉会话已停止'); },
     clear() { inventory = null; flow.clear(); },
     async test(win, mode) {
@@ -211,9 +240,18 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
     }
   });
   return {
-    stop: () => revoke('视觉会话已停止'),
+    stop: () => { if (grant) forget(); else revoke('视觉会话已停止'); },
     markSpoken: win => flow.markSpoken(win),
-    sample: (win, endpoint, permitted) => flow.proactiveSample(win, endpoint,
-      () => !!allowed() && proactivePolicy()?.visionEvery === flow.observation?.every && chatTarget() === endpoint && permitted()),
+    async sample(win, endpoint, permitted) {
+      await ready;
+      const policy = proactivePolicy();
+      if (!matchesGrant() || !policy || !permitted() || !visible(win) || lockedNow() || win !== activeWindow()) return null;
+      if (!flow.observation && !flow.busy && !flow.preview) {
+        check(win);
+        flow.activateProactive(win, grant.source, config, { every: policy.visionEvery, chat: endpoint });
+      }
+      return flow.proactiveSample(win, endpoint,
+        () => !!allowed() && matchesGrant() && proactivePolicy()?.visionEvery === flow.observation?.every && permitted());
+    },
   };
 };

@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: s => ipcRenderer.invoke('settings:set', s),
   memory: (operation, value) => ipcRenderer.invoke('memory:operate', operation, value),
+  openDataManager: () => ipcRenderer.invoke('memory:manager'),
+  onHistoryChanged: cb => ipcRenderer.on('memory:historyChanged', () => cb()),
   companion: (operation, value) => ipcRenderer.invoke('companion:operate', operation, value),
   onAgenda: cb => ipcRenderer.on('companion:agenda', () => cb()),
   onProactivePaused: cb => ipcRenderer.on('companion:paused', () => cb()),

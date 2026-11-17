@@ -31,11 +31,12 @@ const VisionUI = {
     const watching = !!state.observation;
     $('#visionIndicator').classList.toggle('hidden', !watching);
     if (watching) {
-      const mins = Math.max(0, Math.ceil((state.observation.expires - (performance.timeOrigin + performance.now())) / 60000));
       const proactive = state.observation.mode === 'proactive';
       this.observationFeedback = proactive ? '#pvStatus' : '#visTimedFeedback';
-      Settings.feedback(this.observationFeedback, `正在观察 ${state.observation.name}，剩余约 ${mins} 分钟` +
-        (proactive ? `，每 ${state.observation.every} 次主动闲聊查看一次。` : '。'), 'ok');
+      const mins = Math.max(0, Math.ceil((state.observation.expires - (performance.timeOrigin + performance.now())) / 60000));
+      Settings.feedback(this.observationFeedback, state.error || (proactive
+        ? `已授权 ${state.observation.name}，每 ${state.observation.every} 次主动闲聊查看一次。`
+        : `正在观察 ${state.observation.name}，剩余约 ${mins} 分钟。`), state.error ? 'error' : 'ok');
     } else if (this.observationFeedback) {
       Settings.feedback(this.observationFeedback, state.error, state.failure ? 'error' : '');
       this.observationFeedback = null;
@@ -62,11 +63,20 @@ const VisionUI = {
     this.revealedKey = '';
     Settings.maskKey($('#visKey'), $('#visKeyShow'));
     $('#visClearKey').checked = false;
+    $('#pvPrivateWords').value = c.privateWords;
     $('#visKey').placeholder = c.hasKey ? '已加密保存，留空保留' : '';
     $('#visConfigStatus').textContent = state.configError || (state.supported ? '视觉设置独立于聊天服务' : '当前平台不支持屏幕查看');
   },
   async open() {
-    try { this.applyConfig(await this.call('state')); }
+    try {
+      const state = await this.call('state');
+      this.applyConfig(state);
+      if (state.savedSource) {
+        $('#pvKind').value = state.savedSource.id.startsWith('window:') ? 'window' : 'screen';
+        Settings.feedback('#pvStatus', '已记住授权：' + state.savedSource.name, 'ok');
+      }
+      if (state.config.enabled) await Promise.all(['vis', 'pv'].map(area => this.loadSources(area, state.savedSource?.id)));
+    }
     catch (e) { Settings.feedback('#visTestFeedback', e.message, 'error'); }
   },
   show(question) {
@@ -92,22 +102,36 @@ const VisionUI = {
     return {
       enabled: $('#visEnabled').checked, provider: $('#visProvider').value, base: $('#visBase').value.trim(),
       model: $('#visModel').value, key: key === this.revealedKey ? '' : key, clearKey: $('#visClearKey').checked,
+      privateWords: $('#pvPrivateWords').value,
       size: +$('#visSize').value, quality: +$('#visQuality').value, timeout: +$('#visTimeout').value,
     };
   },
   async saveOptions(options) {
     this.applyConfig(await this.call('save', options));
-    $('#visSource').replaceChildren();
+    if (options.enabled) await Promise.allSettled(['vis', 'pv'].map(area => this.loadSources(area, undefined, false, true)));
     $('#visConfigStatus').textContent = '视觉设置已保存';
   },
   async sources(area = 'vis') {
-    if (Settings.changed('vision')) throw new Error('请先保存全部设置，再选择共享来源。');
-    const entries = await this.call('sources', $('#' + area + 'Kind').value);
-    $('#' + area + 'Source').replaceChildren(...entries.map(row => new Option(row.name, row.id)));
-    this.report(entries.length ? '已列出共享来源，请选择并预览。' : '没有可分享的来源。', entries.length ? 'ok' : 'error');
+    return this.loadSources(area, undefined, true);
+  },
+  async loadSources(area, preferred, announce = false, freshlySaved = false) {
+    const menu = $('#' + area + 'Source'), kind = $('#' + area + 'Kind').value;
+    const old = preferred || menu.value;
+    const request = Symbol();
+    menu.request = request;
+    if (!freshlySaved && Settings.changed('vision')) throw new Error('请先保存全部设置，再选择共享来源。');
+    const entries = await this.call('sources', kind);
+    if (menu.request !== request || $('#' + area + 'Kind').value !== kind) return;
+    menu.replaceChildren(...entries.map(row => new Option(row.name, row.id)));
+    if (entries.some(row => row.id === old)) menu.value = old;
+    if (announce || !entries.length) Settings.feedback(area === 'pv' ? '#pvStatus' : '#visStatus',
+      entries.length ? '已更新共享来源，选好后可预览。' : '没有可分享的来源。', entries.length ? 'ok' : 'error');
   },
   async preview(epoch, area = 'vis') {
     if (Settings.changed('vision')) throw new Error('请先保存全部设置，再预览。');
+    const selected = $('#' + area + 'Source').value;
+    await this.loadSources(area);
+    if (!selected || selected !== $('#' + area + 'Source').value) throw new Error('请选择当前要共享的来源后再预览。');
     this.clearPreview();
     const result = await this.call('preview', { id: $('#' + area + 'Source').value, question: area === 'vis' ? $('#visQuestion').value : '' });
     if (epoch !== this.epoch) return;
@@ -122,7 +146,7 @@ const VisionUI = {
   async startProactive() {
     if (Settings.changed('proactive') || Settings.changed('vision') || Settings.changed('regular')) throw new Error('请先保存全部设置，再授权。');
     if (this.tokenArea !== 'pv') return;
-    const started = await this.call('observeProactive', { token: this.token, duration: +$('#pvDuration').value });
+    const started = await this.call('observeProactive', { token: this.token });
     if (started) this.clearPreview();
     else this.report('已取消授权。');
   },
@@ -188,12 +212,22 @@ const VisionUI = {
         this.report(result || '测试已取消', result ? 'ok' : '');
       }, '#visTestFeedback');
     $('#visStop').onclick = $('#visGlobalStop').onclick = () => this.stop();
-    $('#pvStop').onclick = () => this.stop(false, '#pvStatus');
+    $('#pvStop').onclick = () => this.task(async () => {
+      await this.call('forget');
+      this.report('已撤销主动观察授权', 'ok');
+    }, '#pvStatus');
     $('#visClear').onclick = () => this.stop(true, '#visResultFeedback');
-    $('#visKind').onchange = () => { $('#visSource').replaceChildren(); if (this.token) this.stop(); };
-    for (const key of ['Source', 'Question']) $('#vis' + key).onchange = () => { if (this.token) this.stop(); };
-    $('#pvKind').onchange = () => { $('#pvSource').replaceChildren(); if (this.tokenArea === 'pv') this.stop(false, '#pvStatus'); };
-    $('#pvSource').onchange = () => { if (this.tokenArea === 'pv') this.stop(false, '#pvStatus'); };
+    for (const area of ['vis', 'pv']) {
+      const status = area === 'pv' ? '#pvStatus' : '#visStatus';
+      $('#' + area + 'Kind').onchange = () => {
+        this.epoch++;
+        this.clearPreview();
+        $('#' + area + 'Source').replaceChildren();
+        this.loadSources(area, undefined, true).catch(error => Settings.feedback(status, error.message, 'error'));
+      };
+      $('#' + area + 'Source').onchange = () => { this.epoch++; this.clearPreview(); };
+    }
+    $('#visQuestion').onchange = () => { this.epoch++; this.clearPreview(); };
     $('#visProvider').onchange = () => {
       if ($('#visProvider').value === 'openai') $('#visBase').value = 'https://api.openai.com/v1';
     };

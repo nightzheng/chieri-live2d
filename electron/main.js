@@ -71,10 +71,23 @@ function setLoginItem(on) {
 let quietStart = process.argv.includes('--autostart');
 
 // ---------------------------------------------------------------- windows
-let studio = null, pet = null, tray = null, quitting = false;
+let studio = null, pet = null, tray = null, quitting = false, dataWindow = null;
 // her voice may start before the first click (a greeting, a reaction while the window is in the background)
 const webPreferences = { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false,
   autoplayPolicy: 'no-user-gesture-required' };
+
+function openDataWindow() {
+  if (dataWindow) { dataWindow.show(); dataWindow.focus(); return; }
+  dataWindow = new BrowserWindow({ width: 900, height: 740, minWidth: 520, minHeight: 420, title: '记忆与聊天记录', icon: ICON,
+    backgroundColor: '#141629', autoHideMenuBar: true, show: false,
+    webPreferences: { ...webPreferences, preload: path.join(__dirname, 'data-preload.js') } });
+  dataWindow.setContentProtection(true);
+  dataWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  dataWindow.webContents.on('will-navigate', event => event.preventDefault());
+  dataWindow.once('ready-to-show', () => dataWindow?.show());
+  dataWindow.on('closed', () => { dataWindow = null; });
+  dataWindow.loadURL('app://local/data-manager.html');
+}
 
 function openStudio() {
   if (studio) { studio.show(); studio.focus(); return; }
@@ -283,7 +296,11 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   loadSettings();
-  const memory = require('./memory-ipc')(ownedWindow, ROOT, () => settings);
+  const memory = require('./memory-ipc')(ownedWindow, ROOT, () => settings, {
+    open: openDataWindow,
+    owns: sender => dataWindow?.webContents === sender,
+    historyChanged: () => (pet || studio)?.webContents.send('memory:historyChanged'),
+  });
   addMemoryContext = memory.addMemoryContext;
   companion = require('./companion-ipc')({ store: memory.store, trustedWindow, activeWindow: () => pet || studio, settings: () => settings,
     onSpoken: win => vision?.markSpoken(win) });

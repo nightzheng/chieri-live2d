@@ -25,6 +25,7 @@
     "files": [
       "electron/**",
       "index.html",
+      "data-manager.html",
       "css/**",
       "js/**",
       "chc/**",

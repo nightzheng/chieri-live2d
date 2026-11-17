@@ -58,10 +58,10 @@ test('proactive observation checks every nth actual dialogue and never runs on t
     request: async () => { sent++; return 'private fixture'; } });
   const preview = await service.stage('w', source, '', config);
   assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
-  service.beginProactive('w', preview.token, config, { duration: 30, every: 2, chat: 'chat' });
+  service.beginProactive('w', preview.token, { ...config, privateWords: '微信\n密码' }, { every: 2, chat: 'chat' });
   assert.equal(shots, 1);
   assert.equal(sent, 0);
-  now = 15 * minute;
+  now = 24 * 60 * minute;
   await service.tick(true);
   assert.equal(shots, 1);
   assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
@@ -74,6 +74,21 @@ test('proactive observation checks every nth actual dialogue and never runs on t
   service.stop();
   assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
   assert.equal(sent, 1);
+});
+
+test('a private title skips the request and a private description skips forwarding', async () => {
+  let blocked = false, sent = 0;
+  const service = new VisionFlow({ capture: async () => blocked ? null : picture,
+    request: async () => { sent++; return 'WeChat 消息'; } });
+  const preview = await service.stage('w', source, '', config);
+  service.beginProactive('w', preview.token, { ...config, privateWords: 'ｗｅｃｈａｔ' }, { every: 1, chat: 'chat' });
+  blocked = true;
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  assert.equal(sent, 0);
+  blocked = false;
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  assert.equal(sent, 1);
+  assert.match(service.status().error, /已跳过转发/);
 });
 
 test('stopping during capture or network quarantines late results', async () => {

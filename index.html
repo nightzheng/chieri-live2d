@@ -203,7 +203,7 @@
           <label class="f"><span>内容</span><textarea id="aContent" maxlength="500" rows="2"></textarea></label>
           <label class="f"><span>日期</span><input type="date" id="aDay"></label>
           <label class="f"><span>时间</span><input type="time" id="aTime"></label>
-          <label class="f"><span>时区</span><input id="aZone" maxlength="80" placeholder="Asia/Shanghai"></label>
+          <label class="f"><span>时区</span><select id="aZone"></select></label>
           <label class="f"><span>重复</span><select id="aRepeat"><option value="once">单次</option><option value="daily">每天</option><option value="weekly">每周同一天</option><option value="workdays">工作日</option><option value="custom">自定义每周</option></select></label>
           <div id="aWeekdays" class="row2 wrap hidden"></div>
           <label class="sw"><input type="checkbox" id="aVoice" checked><i></i>播放提醒语音</label>
@@ -228,17 +228,18 @@
           <label class="sw"><input type="checkbox" id="pAI"><i></i>用聊天模型生成主动台词</label>
           <label class="sw"><input type="checkbox" id="pVision"><i></i>主动闲聊时查看屏幕</label>
           <label class="f"><span>查看频率</span><select id="pVisionEvery"><option value="1">每次主动闲聊</option><option value="2">每 2 次主动闲聊</option><option value="3">每 3 次主动闲聊</option><option value="5">每 5 次主动闲聊</option><option value="10">每 10 次主动闲聊</option></select></label>
-          <details>
-            <summary>授权主动观察</summary>
-            <p class="note">先保存主动闲聊、AI 台词和看屏幕选项，并配置视觉 API。每次授权从零开始计数。若闲聊间隔较长，会话可能在达到查看次数前到期。</p>
+          <details id="pvSetup">
+            <summary>屏幕来源与隐私</summary>
+            <p class="note">选定来源并确认一次即可记住授权。锁屏时暂停，可随时撤销；更换来源或服务需要重新授权。</p>
             <label class="f"><span>共享范围</span><select id="pvKind"><option value="screen">显示器</option><option value="window">窗口</option></select></label>
             <label class="f"><span>共享来源</span><select id="pvSource"></select></label>
-            <label class="f"><span>时长</span><select id="pvDuration"><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="30" selected>30 分钟</option><option value="60">1 小时</option><option value="120">2 小时</option><option value="240">4 小时</option></select></label>
+            <label class="f"><span>隐私关键词</span><textarea id="pvPrivateWords" rows="4" maxlength="2000" placeholder="每行一个词"></textarea></label>
+            <p class="note">匹配窗口标题会跳过截图。匹配视觉描述会跳过转发。图片里出现但标题没有的文字可能已发送给视觉服务。</p>
             <div class="row2 wrap">
-              <button type="button" class="mini" id="pvSources">列出共享来源</button>
+              <button type="button" class="mini" id="pvSources">刷新来源</button>
               <button type="button" class="mini" id="pvPreview">预览截图</button>
-              <button type="button" class="mini" id="pvStart" disabled>授权本次观察</button>
-              <button type="button" class="mini" id="pvStop">停止观察</button>
+              <button type="button" class="mini" id="pvStart" disabled>记住授权</button>
+              <button type="button" class="mini" id="pvStop">撤销授权</button>
             </div>
             <p class="note action-status" id="pvStatus" role="status"></p>
             <img id="pvImage" class="vision-preview hidden" alt="主动观察的共享预览">
@@ -304,6 +305,13 @@
           <label class="sw"><input type="checkbox" id="mEnabled"><i></i>启用长期记忆保存和 AI 对话引用</label>
           <label class="f"><span>候选提取</span><select id="mAuto"><option value="off">关闭自动提取</option><option value="rules">本地规则</option><option value="ai">AI 辅助</option></select></label>
           <p class="note" id="mModeHelp" aria-live="polite">你主动说「记住」或明确更正时，千绘莉仍会请你确认。</p>
+          <details id="mRules"><summary>本地规则类别</summary>
+            <label class="sw"><input type="checkbox" value="preferences" data-memory-rule><i></i>偏好（我喜欢…）</label>
+            <label class="sw"><input type="checkbox" value="habits" data-memory-rule><i></i>习惯或技能（我经常…）</label>
+            <label class="sw"><input type="checkbox" value="goals" data-memory-rule><i></i>长期目标</label>
+            <label class="sw"><input type="checkbox" value="experiences" data-memory-rule><i></i>重要经历（我曾经参加…）</label>
+            <label class="sw"><input type="checkbox" value="facts" data-memory-rule><i></i>住处或职业</label>
+          </details>
           <label class="f"><span>引用条数</span><select id="mLimit"><option>2</option><option>4</option><option>6</option><option>8</option></select></label>
           <label class="f"><span>引用字节</span><select id="mBudget"><option>700</option><option>1400</option><option>2100</option><option>2800</option></select></label>
           <p class="note">记忆和聊天保存在本机。开启长期记忆后，相关记忆可随聊天请求发送给已配置的 AI 服务。数据库备份包含聊天原文。</p>
@@ -323,42 +331,10 @@
           </div>
           <p class="note action-status" id="mFeedback" role="status"></p>
           <p class="note" id="aFileFeedback" role="status"></p>
-          <details>
-            <summary>管理长期记忆</summary>
-            <label class="f"><span>记忆搜索</span><input id="mQuery" maxlength="200" placeholder="内容、标签或类型"></label>
-            <label class="f"><span>状态</span><select id="mFilter"><option value="active">当前</option><option value="archived">已归档</option></select></label>
-            <label class="f"><span>记忆类型</span><select id="mTypeFilter"><option value="">全部类型</option><option>事实</option><option>偏好</option><option>兴趣</option><option>事项</option><option>约定</option><option>关系</option><option>其他</option></select></label>
-            <div class="row2 wrap">
-              <button type="button" class="mini" id="mSearch">搜索</button>
-              <button type="button" class="mini" id="mPrev">上一页</button>
-              <button type="button" class="mini" id="mNext">下一页</button>
-            </div>
-            <div id="mList" class="data-list"></div>
-            <label class="f"><span>记忆内容</span><textarea id="mContent" maxlength="1000" rows="3"></textarea></label>
-            <label class="f"><span>类型</span><select id="mType"><option>事实</option><option>偏好</option><option>兴趣</option><option>事项</option><option>约定</option><option>关系</option><option>其他</option></select></label>
-            <label class="f"><span>标签</span><input id="mTags" maxlength="200"></label>
-            <label class="f"><span>重要性</span><select id="mImportance"><option value="1">一般</option><option value="2">常用</option><option value="3">重要</option></select></label>
-            <label class="f"><span>有效至</span><input id="mExpiry" type="datetime-local" aria-label="有效至，留空表示不限时"></label>
-            <div class="row2 wrap">
-              <button type="button" class="mini" id="mSave">添加记忆</button>
-              <button type="button" class="mini hidden" id="mCancel">取消编辑</button>
-              <button type="button" class="mini" data-memory="clearMemories">清除全部长期记忆</button>
-            </div>
-            <p class="note action-status" id="mEditFeedback" role="status"></p>
-          </details>
+          <button type="button" class="mini" id="mManager">打开记忆与聊天管理</button>
           <details>
             <summary>最近一次 AI 聊天使用的记忆</summary>
             <ul id="mUsed"></ul>
-          </details>
-          <details>
-            <summary>聊天记录</summary>
-            <label class="f"><span>聊天搜索</span><input id="mChatQuery" maxlength="200" placeholder="搜索历史消息"></label>
-            <div class="row2 wrap">
-              <button type="button" class="mini" id="mChatSearch">搜索 / 最新</button>
-              <button type="button" class="mini" id="mChatMore">更早</button>
-              <button type="button" class="mini" id="mClearChat">清除聊天记录</button>
-            </div>
-            <div id="mHistory" class="data-list"></div>
           </details>
         </fieldset>
         <fieldset class="desk-only" id="desktopSettings">

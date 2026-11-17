@@ -29,7 +29,12 @@ const CompanionUI = {
   async refresh() {
     const { reminders, events, timezone } = await this.call('list');
     this.timezone = timezone;
-    if (!$('#aZone').value) this.edit();
+    const zones = [...new Set([timezone, 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Tokyo', 'UTC', ...Intl.supportedValuesOf('timeZone')])];
+    const zone = $('#aZone');
+    if (!zone.options.length) {
+      zone.replaceChildren(...zones.map(value => new Option(value === timezone ? '本机 · ' + value : value, value)));
+      this.edit();
+    }
     const format = (at, zone = timezone) => new Intl.DateTimeFormat(undefined, {
       timeZone: zone, dateStyle: 'medium', timeStyle: 'short',
     }).format(at);
@@ -53,6 +58,9 @@ const CompanionUI = {
   },
   change(op, value) { return this.task('#aFeedback', async () => { await this.call(op, value); await this.refresh(); }); },
   edit(row) {
+    if (row?.timezone && !Array.from($('#aZone').options).some(option => option.value === row.timezone)) {
+      $('#aZone').add(new Option(row.timezone, row.timezone));
+    }
     this.id = row?.id ?? null;
     this.editingEnabled = row ? !!row.enabled : true;
     const local = new Date(Date.now() + 60000);

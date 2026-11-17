@@ -24,13 +24,22 @@ function inputText(value, max = MAX_TEXT, allowEmpty = false) {
 const normalize = text => text.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
 const sha = text => createHash('sha256').update(text).digest('hex');
 
-function extraction(input, auto, now = Date.now()) {
+const RULE_GROUPS = ['preferences', 'habits', 'goals', 'experiences', 'facts'];
+const RULE_PATTERNS = {
+  habits: '一直在|长期在|经常|习惯于|擅长',
+  goals: '的长期目标是',
+  experiences: '曾经参加',
+  facts: '现居|现在住在|住在|目前的职业是',
+};
+
+function extraction(input, auto, now = Date.now(), rules = RULE_GROUPS) {
   const text = inputText(input).trim();
   if (SENSITIVE.test(text) || FICTION.test(text)) return null;
   const explicit = /^(?:千绘莉[，,、\s]*)?(?:请)?(?:记住|帮我记住|更正(?:一下)?)[：:，,\s]*(.+)$/u.exec(text);
   const content = (explicit ? explicit[1] : text).replace(/[。！？!?]+$/u, '').trim();
   const preference = /^我((?:现在|已经|以前|一直|最)?(?:不再|不|很|特别)?)?(喜欢|喜爱|爱喝|爱吃|偏爱|讨厌)([^，,。；;！？!?]{1,100})$/u.exec(content);
-  const candidate = preference || /^我(?:一直在|长期在|经常|习惯于|的长期目标是|擅长|曾经参加|现居|现在住在|住在|目前的职业是)[^，,。；;！？!?]{2,100}$/u.test(content);
+  const candidate = (preference && rules.includes('preferences')) || Object.entries(RULE_PATTERNS).some(([group, prefixes]) =>
+    rules.includes(group) && new RegExp('^我(?:' + prefixes + ')[^，,。；;！？!?]{2,100}$', 'u').test(content));
   const correction = preference && /不/.test(preference[1] || '');
   if (!content || content.length > 1000 || (!explicit && !correction && (!auto || !candidate))) return null;
   if (preference?.[1]?.startsWith('以前')) return null;
@@ -434,19 +443,34 @@ class MemoryStore {
     this.open().prepare('DELETE FROM messages WHERE conversation=?').run(inputText(conversation, 80));
   }
 
+  hasConversation(conversation) {
+    return !!this.open().prepare('SELECT 1 FROM messages WHERE conversation=? LIMIT 1').get(inputText(conversation, 80));
+  }
+
   clearHistory() { this.open().exec('DELETE FROM messages'); }
   clearMemories() { this.open().exec('DELETE FROM memories'); }
 
-  list(query = '', state = 'active', offset = 0, type = '') {
+  list(query = '', state = 'active', offset = 0, type = '', limit = 40) {
     if (!['active', 'archived'].includes(state) || !Number.isSafeInteger(offset) || offset < 0 ||
-        (type !== '' && !TYPES.includes(type))) throw new Error('筛选参数无效');
+        ![13, 40].includes(limit) || (type !== '' && !TYPES.includes(type))) throw new Error('筛选参数无效');
     inputText(query, 200, true);
     const db = this.open();
     this.expire(db, Date.now());
     return db.prepare(`SELECT * FROM memories WHERE archived=?
       AND (? = '' OR type = ?)
-      AND instr(lower(content || ' ' || tags || ' ' || type), lower(?)) > 0 ORDER BY updated DESC, id LIMIT 40 OFFSET ?`)
-      .all(Number(state === 'archived'), type, type, query, offset);
+      AND instr(lower(content || ' ' || tags || ' ' || type), lower(?)) > 0 ORDER BY updated DESC, id LIMIT ? OFFSET ?`)
+      .all(Number(state === 'archived'), type, type, query, limit, offset);
+  }
+
+  conversations(query = '', offset = 0) {
+    inputText(query, 200, true);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('分页位置无效');
+    return this.open().prepare(`WITH page AS (
+      SELECT conversation, max(id) AS newest FROM messages GROUP BY conversation
+      HAVING max(instr(lower(text), lower(?))) > 0
+      ORDER BY newest DESC LIMIT 13 OFFSET ?
+    )
+    SELECT m.*, page.newest FROM page JOIN messages m USING(conversation) ORDER BY page.newest DESC, m.id ASC`).all(query, offset);
   }
 
   save(value, source = 'manual', confidence = 1) {
@@ -570,4 +594,4 @@ class MemoryStore {
   }
 }
 
-module.exports = { MemoryStore, extraction, writeAtomic, validateMemory };
+module.exports = { MemoryStore, extraction, writeAtomic, validateMemory, RULE_GROUPS };

@@ -4,10 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { app, ipcMain, dialog, shell } = require('electron');
 const { randomUUID } = require('node:crypto');
-const { MemoryStore, extraction, writeAtomic, validateMemory } = require('./memory-store');
+const { MemoryStore, extraction, writeAtomic, validateMemory, RULE_GROUPS } = require('./memory-store');
 const { configuredRequest, detect } = require('./memory-extraction');
 
-module.exports = function registerMemory(ownsWindow, root, settings) {
+module.exports = function registerMemory(ownsWindow, root, settings, manager) {
   const configDir = app.getPath('userData');
   const local = process.platform === 'win32' ? process.env.LOCALAPPDATA : app.getPath('appData');
   const defaultDir = path.join(local || path.join(path.dirname(app.getPath('appData')), 'Local'), '千绘莉', 'memory');
@@ -18,11 +18,13 @@ module.exports = function registerMemory(ownsWindow, root, settings) {
   });
   const optionsFile = path.join(configDir, 'memory-options.json');
   const modes = ['off','rules','ai'];
-  let options = { enabled: true, mode: 'off', limit: 4, budget: 1400 };
+  const validRules = rules => Array.isArray(rules) && rules.every(rule => RULE_GROUPS.includes(rule));
+  let options = { enabled: true, mode: 'off', limit: 4, budget: 1400, rules: RULE_GROUPS };
   try {
     const value = JSON.parse(fs.readFileSync(optionsFile, 'utf8'));
     options = { ...options, enabled: value.enabled === true, mode: modes.includes(value.mode) ? value.mode : value.auto === true ? 'rules' : 'off',
-      limit: [2,4,6,8].includes(value.limit) ? value.limit : 4, budget: [700,1400,2100,2800].includes(value.budget) ? value.budget : 1400 };
+      limit: [2,4,6,8].includes(value.limit) ? value.limit : 4, budget: [700,1400,2100,2800].includes(value.budget) ? value.budget : 1400,
+      rules: validRules(value.rules) ? value.rules : RULE_GROUPS };
   } catch (e) {
     if (e.code !== 'ENOENT') options.enabled = false;
   }
@@ -41,6 +43,7 @@ module.exports = function registerMemory(ownsWindow, root, settings) {
   const confirm = async (w, message, detail) => (await dialog.showMessageBox(w, {
     type: 'warning', buttons: ['取消', '继续'], defaultId: 0, cancelId: 0, message, detail,
   })).response === 1;
+  const propose = text => options.enabled && extraction(text, options.mode !== 'off', Date.now(), options.rules) || null;
   const actions = {
     status: getStatus,
     options: (_, value) => {
@@ -48,7 +51,9 @@ module.exports = function registerMemory(ownsWindow, root, settings) {
       const limit = value?.limit ?? options.limit, budget = value?.budget ?? options.budget;
       if (typeof value?.enabled !== 'boolean' || !modes.includes(mode) || ![2,4,6,8].includes(limit) ||
           ![700,1400,2100,2800].includes(budget)) throw new Error('设置参数无效');
-      const next = { enabled: value.enabled, mode, limit, budget };
+      const rules = value.rules ?? options.rules;
+      if (!validRules(rules)) throw new Error('记忆规则无效');
+      const next = { enabled: value.enabled, mode, limit, budget, rules: [...new Set(rules)] };
       fs.mkdirSync(configDir, { recursive: true });
       writeAtomic(optionsFile, next);
       options = next;
@@ -56,14 +61,14 @@ module.exports = function registerMemory(ownsWindow, root, settings) {
       if (!options.enabled) lastUsed = [];
       return options;
     },
-    list: (_, a) => store.list(a?.query, a?.state, a?.offset, a?.type),
+    list: (_, a) => store.list(a?.query, a?.state, a?.offset, a?.type, a?.limit),
     save: (_, a) => {
       const id = store.save(a);
       lastUsed = [];
       return id;
     },
     remove: (_, id) => { store.remove(id); lastUsed = lastUsed.filter(row => row.id !== id); },
-    propose: (_, text) => options.enabled ? extraction(text, options.mode !== 'off') : null,
+    propose: (_, text) => propose(text),
     async semantic(win, text) {
       if (!options.enabled || options.mode !== 'ai' || typeof text !== 'string') return null;
       const excerpts = store.candidateExcerpts(text);
@@ -87,13 +92,14 @@ module.exports = function registerMemory(ownsWindow, root, settings) {
       return store.save(proposal, proposal.source, proposal.confidence);
     },
     remember: (_, text) => {
-      const proposed = options.enabled && extraction(text, options.mode !== 'off');
+      const proposed = propose(text);
       if (!proposed) throw new Error('这条消息不可保存为记忆');
       return store.save(proposed, proposed.source, proposed.confidence);
     },
     legacy: (_, rows) => store.importLegacy(rows),
-    append: (_, a) => store.append(a?.who, a?.text, a?.conversation),
+    append: (_, a) => a?.who === 'bot' && !store.hasConversation(a.conversation) ? null : store.append(a?.who, a?.text, a?.conversation),
     history: (_, a) => store.history(a?.query, a?.before),
+    conversations: (_, a) => store.conversations(a?.query, a?.offset),
     deleteConversation: (_, id) => store.deleteConversation(id),
     clearHistory: () => store.clearHistory(),
     clearMemories: () => { store.clearMemories(); lastUsed = []; },
@@ -150,14 +156,26 @@ module.exports = function registerMemory(ownsWindow, root, settings) {
     },
   };
   const fileDialogs = new Set(['migrate', 'defaults', 'relink', 'restore', 'exportFile', 'importFile']);
+  const management = new Set(['status', 'list', 'save', 'remove', 'conversations', 'deleteConversation', 'clearHistory', 'clearMemories']);
+  ipcMain.handle('memory:manager', event => {
+    if (!ownsWindow(event.sender) || event.senderFrame !== event.sender.mainFrame ||
+        event.senderFrame?.url.split('?')[0] !== 'app://local/index.html') throw new Error('记忆操作来源无效');
+    manager.open();
+  });
   ipcMain.handle('memory:operate', async (event, operation, value) => {
     const win = ownsWindow(event.sender);
     const frame = event.senderFrame;
     const url = frame?.url?.split('?')[0];
-    if (!win || frame !== event.sender.mainFrame || url !== 'app://local/index.html' || typeof operation !== 'string' || !Object.hasOwn(actions, operation)) {
+    const dataWindow = manager.owns(event.sender) && url === 'app://local/data-manager.html' && management.has(operation);
+    if ((!dataWindow && (!win || url !== 'app://local/index.html')) || frame !== event.sender.mainFrame ||
+        typeof operation !== 'string' || !Object.hasOwn(actions, operation)) {
       throw new Error('记忆操作来源无效');
     }
-    if (!fileDialogs.has(operation)) return actions[operation](win, value);
+    if (!fileDialogs.has(operation)) {
+      const result = actions[operation](win, value);
+      if (dataWindow && ['deleteConversation', 'clearHistory'].includes(operation)) manager.historyChanged();
+      return result;
+    }
     if (dialogOpen) throw new Error('请先完成打开的文件操作');
     dialogOpen = true;
     try { return await actions[operation](win, value); }

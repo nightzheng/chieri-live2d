@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN" class="data-manager">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'">
+  <title>记忆与聊天记录</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="data-workspace">
+  <h1>记忆与聊天记录</h1>
+  <nav class="row2 wrap" aria-label="数据分类">
+    <button type="button" class="mini" data-panel="memoryPanel">长期记忆</button>
+    <button type="button" class="mini" data-panel="historyPanel">聊天记录</button>
+  </nav>
+  <p class="note action-status" id="mFeedback" role="status"></p>
+  <section id="memoryPanel" class="data-panel">
+    <h2>长期记忆</h2>
+    <div class="data-filters">
+    <label class="f"><span>记忆搜索</span><input id="mQuery" maxlength="200" placeholder="内容、标签或类型"></label>
+    <label class="f"><span>状态</span><select id="mFilter"><option value="active">当前</option><option value="archived">已归档</option></select></label>
+    <label class="f"><span>记忆类型</span><select id="mTypeFilter"><option value="">全部类型</option><option>事实</option><option>偏好</option><option>兴趣</option><option>事项</option><option>约定</option><option>关系</option><option>其他</option></select></label>
+    </div>
+    <div class="row2 wrap">
+      <button type="button" class="mini" id="mSearch">搜索</button>
+      <button type="button" class="mini" id="mPrev">上一页</button>
+      <button type="button" class="mini" id="mNext">下一页</button>
+      <span class="note" id="mPage" aria-live="polite"></span>
+    </div>
+    <div id="mList" class="data-list"></div>
+    <details id="mEditor" class="data-editor"><summary>添加或编辑记忆</summary>
+    <label class="f"><span>记忆内容</span><textarea id="mContent" maxlength="1000" rows="3"></textarea></label>
+    <label class="f"><span>类型</span><select id="mType"><option>事实</option><option>偏好</option><option>兴趣</option><option>事项</option><option>约定</option><option>关系</option><option>其他</option></select></label>
+    <label class="f"><span>标签</span><input id="mTags" maxlength="200"></label>
+    <label class="f"><span>重要性</span><select id="mImportance"><option value="1">一般</option><option value="2">常用</option><option value="3">重要</option></select></label>
+    <label class="f"><span>有效至</span><input id="mExpiry" type="datetime-local" aria-label="有效至，留空表示不限时"></label>
+    <div class="row2 wrap">
+      <button type="button" class="mini" id="mSave">添加记忆</button>
+      <button type="button" class="mini hidden" id="mCancel">取消编辑</button>
+      <button type="button" class="mini" id="mClearMemories">清除全部长期记忆</button>
+    </div>
+    <p class="note action-status" id="mEditFeedback" role="status"></p>
+    </details>
+  </section>
+  <section id="historyPanel" class="data-panel">
+    <h2>聊天记录</h2>
+    <p class="note">桌面记录按轮保存。AI 只使用近期消息作为上下文。</p>
+    <label class="f"><span>聊天搜索</span><input id="mChatQuery" maxlength="200" placeholder="搜索历史消息"></label>
+    <div class="row2 wrap">
+      <button type="button" class="mini" id="mChatSearch">搜索 / 最新</button>
+      <button type="button" class="mini" id="mChatPrev">较新</button>
+      <button type="button" class="mini" id="mChatMore">较早</button>
+      <span class="note" id="mChatPage" aria-live="polite"></span>
+      <button type="button" class="mini" id="mClearChat">清除聊天记录</button>
+    </div>
+    <div id="mHistory" class="data-list"></div>
+            </section>
+</main>
+<script src="js/memory-ui.js"></script>
+</body>
+</html>

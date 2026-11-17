@@ -24,7 +24,7 @@ const realNow = performance.now.bind(performance);
 let clockOffset = 0;
 Object.defineProperty(performance, 'now', { value: () => realNow() + clockOffset });
 
-let approved = false, shots = 0, sent = 0, failed = false, ownWindow, proactiveBody, chatBody;
+let approved = false, shots = 0, sent = 0, failed = false, privateWindow = false, ownWindow, proactiveBody, chatBody;
 const red = Buffer.alloc(96 * 64 * 4, 255);
 const responses = [];
 const server = http.createServer((req, res) => {
@@ -61,7 +61,8 @@ async function run() {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = 'http://127.0.0.1:' + server.address().port;
   // Replace only the OS boundary. IPC, confirmation ordering, compression, encryption and HTTP are real.
-  desktopCapturer.getSources = async ({ thumbnailSize }) => {
+  desktopCapturer.getSources = async ({ types, thumbnailSize }) => {
+    if (types[0] === 'window') return privateWindow ? [{ id: 'window:42:0', name: '微信 · 私人聊天' }] : [];
     if (thumbnailSize.width) shots++;
     const thumbnail = thumbnailSize.width ? nativeImage.createFromBitmap(red, { width: 96, height: 64 }) : nativeImage.createEmpty();
     return [{ id: 'screen:420:0', name: 'Synthetic monitor', thumbnail }];
@@ -132,6 +133,12 @@ async function run() {
   assert.equal((await call('state')).latest, '');
   assert.equal((await ipc('memory', 'list')).length, 0);
   assert.equal((await ipc('memory', 'history')).some(row => row.text.includes('视觉描述')), false);
+  await runJS('Settings.close(); Settings.open(); true');
+  await until(() => runJS("!Settings.loading && document.querySelector('#pvSource').options.length === 1"));
+  await runJS("document.querySelector('#pvKind').value = 'window'; document.querySelector('#pvKind').dispatchEvent(new Event('change'))");
+  await until(() => runJS("document.querySelector('#pvStatus').textContent.includes('没有可分享')"));
+  await runJS("document.querySelector('#pvKind').value = 'screen'; document.querySelector('#pvKind').dispatchEvent(new Event('change'))");
+  await until(() => runJS("document.querySelector('#pvSource').options.length === 1"));
 
   clockOffset += 31000;
   failed = true;
@@ -164,6 +171,7 @@ async function run() {
   assert.equal((await call('state')).observation, null);
   approved = true;
   assert.equal(await call('observeProactive', { token: preview.token, duration: 30 }), true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(profile, 'proactive-screen.json'), 'utf8')).source.name, proactiveSource.name);
   assert.equal(sent, sentBefore, 'authorization does not send the preview');
   assert.equal((await call('state')).observation.mode, 'proactive');
   const shotsBefore = shots;
@@ -180,7 +188,25 @@ async function run() {
   assert.equal((await call('state')).latest, '');
   powerMonitor.emit('lock-screen');
   assert.equal((await call('state')).observation, null);
-  console.log('Electron passed reminders, memory opt-out, visual consent and lock, and one proactive screenshot in two dialogues.');
+  assert.equal((await call('state')).savedSource.name, proactiveSource.name);
+  powerMonitor.emit('unlock-screen');
+  approved = false;
+  privateWindow = true;
+  for (let i = 0; i < 2; i++) {
+    proactiveBody = undefined;
+    now += 21 * 60000;
+    clockOffset += 31000;
+    await until(() => proactiveBody);
+    assert.doesNotMatch(JSON.stringify(proactiveBody), /合成画面的视觉描述/);
+    await until(() => runJS('!CompanionUI.talking'));
+  }
+  assert.equal(sent, sentBefore + 1, 'the private window prevents upload after allowing the same grant to resume');
+  assert.equal(shots, shotsBefore + 1);
+  assert.match((await call('state')).error, /隐私窗口/);
+  await call('forget');
+  assert.equal((await call('state')).savedSource, null);
+  assert.equal(fs.existsSync(path.join(profile, 'proactive-screen.json')), false);
+  console.log('Electron passed visual consent, cadence, automatic resume, privacy filtering and grant revocation.');
 }
 
 run().then(() => app.quit(), error => { console.error(error); app.exit(1); }).finally(() => server.close());

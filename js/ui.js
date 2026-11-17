@@ -613,6 +613,10 @@ function initUI() {
   Chat.restore().finally(() => { Chat.sending = false; });
   initRec();
   if (DESKTOP) {
+    window.petAPI.onHistoryChanged(async () => {
+      while (Chat.sending) await new Promise(resolve => setTimeout(resolve, 100));
+      await Chat.reload();
+    });
     window.petAPI.onSettings(async () => { await Store.load(); applyNames(); applyBg(); if (PET) Sizer.show(); });
     window.petAPI.onCmd(c => {
       if (c === 'chat') Chat.open(true); if (c === 'settings') Settings.open(); if (c === 'resize' && PET) Sizer.on(true);

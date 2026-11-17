@@ -5,8 +5,14 @@ const { randomUUID } = require('node:crypto');
 const MINUTE = 60000;
 const MAX_IMAGE = 1024 * 1024;
 const INTERVALS = [5, 10, 15, 30];
-const PROACTIVE_DURATIONS = [...INTERVALS, 60, 120, 240];
-const DEFAULTS = { enabled: false, provider: 'openai', base: 'https://api.openai.com/v1', model: '', size: 1024, quality: 70, timeout: 20000 };
+const PRIVATE_WORDS = '微信\nWeChat\n企业微信\nQQ\n钉钉\n飞书\nTelegram\nWhatsApp\nDiscord\n邮件\nOutlook\n密码\n验证码\n口令\n身份证\n银行卡\n支付\n私钥\nAPI Key\nPassword\nBitwarden\n1Password\nKeePass';
+const DEFAULTS = { enabled: false, provider: 'openai', base: 'https://api.openai.com/v1', model: '', size: 1024, quality: 70, timeout: 20000, privateWords: PRIVATE_WORDS };
+
+function isPrivate(text, words) {
+  const normalize = value => value.normalize('NFKC').toLowerCase();
+  const body = normalize(text);
+  return words.split(/[\n,，]+/).map(word => normalize(word.trim())).some(word => word && body.includes(word));
+}
 
 function validateConfig(value) {
   if (!value || typeof value.enabled !== 'boolean' || !['openai', 'compatible'].includes(value.provider) ||
@@ -21,8 +27,10 @@ function validateConfig(value) {
   if (value.provider === 'openai' && url.origin + url.pathname.replace(/\/+$/, '') !== DEFAULTS.base) {
     throw new Error('OpenAI 预设只使用 api.openai.com/v1，自定义地址请选择兼容服务');
   }
+  const privateWords = value.privateWords ?? PRIVATE_WORDS;
+  if (typeof privateWords !== 'string' || privateWords.length > 2000 || privateWords.includes('\0')) throw new Error('隐私关键词最多 2000 字');
   return { enabled: value.enabled, provider: value.provider, base: url.href.replace(/\/+$/, ''),
-    model: value.model.trim(), size: value.size, quality: value.quality, timeout: value.timeout };
+    model: value.model.trim(), size: value.size, quality: value.quality, timeout: value.timeout, privateWords };
 }
 
 function parseRequest(question) {
@@ -172,13 +180,18 @@ class VisionFlow {
     } finally { this.busy = false; this.notify(this.status()); }
   }
 
-  beginProactive(owner, token, config, { duration, every, chat }) {
+  beginProactive(owner, token, config, { every, chat }) {
     this.inspect(owner, token);
-    if (this.busy || !PROACTIVE_DURATIONS.includes(duration)) throw new Error('观察时长无效或正在处理另一项操作');
+    if (this.busy || this.observation) throw new Error('请先停止当前视觉操作');
     const { source } = this.preview;
+    this.activateProactive(owner, source, config, { every, chat });
+  }
+
+  activateProactive(owner, source, config, { every, chat }) {
     this.preview = null;
     this.error = '';
-    this.observation = { owner, source, config, chat, every, spoken: 0, mode: 'proactive', expires: this.now() + duration * MINUTE };
+    this.failure = false;
+    this.observation = { owner, source, config, chat, every, spoken: 0, mode: 'proactive', expires: Infinity };
     this.notify(this.status());
   }
 
@@ -193,13 +206,19 @@ class VisionFlow {
     if (session?.mode !== 'proactive' || session.owner !== owner || session.chat !== chat || this.busy ||
         (session.spoken + 1) % session.every !== 0 || !valid() || this.now() - this.lastRequest < 30000) return null;
     this.busy = true;
+    this.error = '';
     this.notify(this.status());
     try {
-      const jpeg = await this.capture(session.source, session.config);
-      if (!valid()) return null;
+      const jpeg = await this.capture(session.source, session.config, true);
+      if (!jpeg || !valid()) return null;
       const text = await this.run({ ...session.config, timeout: Math.min(session.config.timeout, 8000) }, jpeg,
         '用一句话概括画面里的公开活动或主题，略去姓名、消息原文、凭据及其他私人信息。不确定就直说。', session.expires);
-      return valid() ? text.slice(0, 400) : null;
+      if (!valid()) return null;
+      if (isPrivate(text, session.config.privateWords ?? PRIVATE_WORDS)) {
+        this.error = '识别结果命中隐私关键词，已跳过转发';
+        return null;
+      }
+      return text.slice(0, 400);
     } catch (_) {
       if (this.observation === session) this.stop('主动观察因截图或请求失败已停止', true);
       return null;
@@ -235,4 +254,4 @@ class VisionFlow {
   }
 }
 
-module.exports = { DEFAULTS, INTERVALS, PROACTIVE_DURATIONS, MAX_IMAGE, VisionFlow, validateConfig, visionRequest, parseRequest };
+module.exports = { DEFAULTS, INTERVALS, MAX_IMAGE, VisionFlow, validateConfig, visionRequest, parseRequest, isPrivate };
