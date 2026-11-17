@@ -1,7 +1,12 @@
 ﻿; Installer look and words (included by electron-builder's NSIS template)
 
+!include "${__FILEDIR__}\installer-location.nsh"
+
 !macro customHeader
   !insertmacro chieriCloseFunction
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro chieriResolveInstallLocation
+  !endif
   ; soft pink pages to go with the sidebar artwork
   !ifdef MUI_BGCOLOR
     !undef MUI_BGCOLOR
@@ -23,8 +28,12 @@
   !endif
 !macroend
 
-; Run the same native check for setup and uninstall. The previous install path is
-; taken from electron-builder's existing per-user registry key, even when $INSTDIR changed.
+; Preserve the exact existing install path on the assisted directory page.
+!macro customPageAfterChangeDir
+  !undef MUI_PAGE_CUSTOMFUNCTION_PRE
+  !define MUI_PAGE_CUSTOMFUNCTION_PRE ChieriPrepareInstallDir
+!macroend
+
 !ifdef BUILD_UNINSTALLER
   !define CHIERI_SCOPE "un."
 !else
@@ -34,28 +43,19 @@
 
 !macro customCheckAppRunning
   !ifndef BUILD_UNINSTALLER
-    ReadRegStr $ChieriPreviousDir HKCU "${INSTALL_REGISTRY_KEY}" "InstallLocation"
+    Call ChieriReadPreviousDir
+    Call ChieriCheckInstallDir
+    ${If} $2 == 2
+      MessageBox MB_OK|MB_ICONEXCLAMATION "所选目录有其他文件，未找到千绘莉程序。请选择旧安装目录或新的空目录。" /SD IDOK
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
     ${If} $ChieriPreviousDir != ""
     ${AndIf} $ChieriPreviousDir != $INSTDIR
       Push $ChieriPreviousDir
       Call ChieriClose
     ${EndIf}
-  !endif
-  !ifndef BUILD_UNINSTALLER
-    ${If} $ChieriPreviousDir != $INSTDIR
-      FindFirst $0 $1 "$INSTDIR\*"
-      ${DoWhile} $1 != ""
-        ${If} $1 != "."
-        ${AndIf} $1 != ".."
-          FindClose $0
-          MessageBox MB_OK|MB_ICONEXCLAMATION "所选的新安装目录已有文件。请重新运行安装程序并选择空目录。" /SD IDOK
-          SetErrorLevel 2
-          Quit
-        ${EndIf}
-        FindNext $0 $1
-      ${Loop}
-      FindClose $0
-    ${EndIf}
+    StrCpy $appExe "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
   !endif
   Push $INSTDIR
   Call ${CHIERI_SCOPE}ChieriClose

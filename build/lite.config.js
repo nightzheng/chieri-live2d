@@ -4,5 +4,6 @@ const base = require('../package.json').build;
 
 module.exports = {
   ...base,
+  extraMetadata: { chieriEdition: 'online' },
   nsis: { ...base.nsis, artifactName: '千绘莉-在线版-Setup-${version}.exe' },
 };

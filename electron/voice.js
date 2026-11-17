@@ -14,7 +14,8 @@ const { spawn, execFile } = require('child_process');
 const VOICE_DIR = app.isPackaged ? path.join(process.resourcesPath, 'voice') : path.join(__dirname, '..', 'voice');
 const MODEL = path.join(VOICE_DIR, 'Chieri_GPTSoVITS_20261103');
 const SERVER = path.join(VOICE_DIR, 'chieri_server.py');
-const LOCAL = fs.existsSync(path.join(MODEL, 'delivery', 'chieri-gpt.ckpt')) && fs.existsSync(SERVER);
+const LOCAL = (!app.isPackaged || require('../package.json').chieriEdition !== 'online') &&
+  fs.existsSync(path.join(MODEL, 'delivery', 'chieri-gpt.ckpt')) && fs.existsSync(SERVER);
 const WORK = path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'chieri-tts');
 const ENV_PY = path.join(WORK, 'env', 'Scripts', 'python.exe');
 // written only once setup has installed and checked everything: the venv exists long before that
