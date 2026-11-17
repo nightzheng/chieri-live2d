@@ -136,6 +136,7 @@
         <button type="button" class="mini" data-section="proactiveSettings">主动互动</button>
         <button type="button" class="mini" data-section="visionSettings">视觉</button>
         <button type="button" class="mini" data-section="memorySettings">记忆与数据</button>
+        <button type="button" class="mini" data-section="desktopSettings">桌宠</button>
       </nav>
       <div class="body">
         <fieldset id="aiSettings">
@@ -231,11 +232,8 @@
           <label class="f"><span>陪伴偏好</span><select id="pManual"><option value="normal">日常</option><option value="quiet">保持安静</option><option value="focus">保持专注</option></select></label>
           <p class="note" id="pState" aria-live="polite"></p>
           <label class="sw"><input type="checkbox" id="pVoice"><i></i>同时朗读主动台词</label>
-          <div class="row2 wrap">
-            <button type="button" class="mini" id="pSave">保存主动互动设置</button>
-            <button type="button" class="mini" id="pPause">立即暂停</button>
-            <button type="button" class="mini" id="pResume">恢复陪伴</button>
-          </div>
+          <label class="f"><span>日常语气词</span><select id="sAmbient"><option value="0">关闭</option><option value="1">至少间隔 1 分钟</option><option value="5">至少间隔 5 分钟</option><option value="15">至少间隔 15 分钟</option><option value="30">至少间隔 30 分钟</option></select></label>
+          <p class="note">适用于发呆、哼歌、伸懒腰等自动发声。</p>
           <p class="note" id="pFeedback" role="status"></p>
         </fieldset>
         <fieldset class="desk-only" id="visionSettings">
@@ -244,13 +242,12 @@
           <label class="f"><span>服务商</span><select id="visProvider"><option value="openai">OpenAI</option><option value="compatible">自定义 OpenAI 兼容</option></select></label>
           <label class="f"><span>接口地址</span><input id="visBase" maxlength="250"></label>
           <label class="f"><span>视觉模型</span><input id="visModel" maxlength="150"></label>
-          <label class="f"><span>API Key</span><input id="visKey" type="password" autocomplete="off" maxlength="1024"></label>
+          <label class="f"><span>API Key</span><span class="pw"><input id="visKey" type="password" autocomplete="off" maxlength="1024"><button type="button" id="visKeyShow" class="mini">显示</button></span></label>
           <label class="sw"><input type="checkbox" id="visClearKey"><i></i>清除已存的视觉密钥</label>
           <label class="f"><span>尺寸</span><select id="visSize"><option>768</option><option>1024</option><option>1280</option></select></label>
           <label class="f"><span>JPEG 质量</span><select id="visQuality"><option>55</option><option>70</option><option>85</option></select></label>
           <label class="f"><span>超时</span><select id="visTimeout"><option value="10000">10 秒</option><option value="20000">20 秒</option><option value="30000">30 秒</option></select></label>
           <div class="row2 wrap">
-            <button type="button" class="mini" id="visSave">保存视觉设置</button>
             <button type="button" class="mini" id="visConnection">测试连接</button>
             <button type="button" class="mini" id="visTestImage">分析合成测试图</button>
           </div>
@@ -343,7 +340,7 @@
             <div id="mHistory" class="data-list"></div>
           </details>
         </fieldset>
-        <fieldset class="desk-only">
+        <fieldset class="desk-only" id="desktopSettings">
           <legend>桌面宠物</legend>
           <label class="f"><span>显示层级</span><select id="sLevel">
             <option value="top">最前（盖过全屏程序和任务栏）</option>
@@ -357,7 +354,7 @@
           <p class="note hidden" id="sAutoNote"></p>
         </fieldset>
       </div>
-      <footer><button class="btn ghost" data-close>关闭</button><button class="btn primary" id="sSave">保存常规设置</button></footer>
+      <footer><button class="btn ghost" data-close>关闭</button><button class="btn primary" id="sSave">保存全部</button></footer>
     </div>
   </div>
 

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { Agenda, calendar, nextOccurrence, parseReminder } = require('./agenda');
-const { Proactive, command } = require('./proactive');
+const { Proactive, command, quiet } = require('./proactive');
 
 module.exports = function companion({ store, trustedWindow, activeWindow, settings }) {
   const reminders = new Agenda(() => store.open());
@@ -106,6 +106,12 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
     options: () => proactive.options(),
     configure: (_, value) => { invalidate(); proactive.temporary('normal', 0, Date.now()); return proactive.configure(value, Date.now()); },
     status: (_, value) => proactive.status(presence(value?.busy === true, value?.recording === true)),
+    ambientAllowed(win) {
+      const current = presence(), options = proactive.options();
+      const manual = proactive.session.until > current.now ? proactive.session.focus : options.manual;
+      return win === activeWindow() && !current.locked && !current.recording && !current.reminder &&
+        manual === 'normal' && !quiet(calendar(current.now, current.zone).time, options);
+    },
     activity: (_, kind) => {
       activity = Date.now();
       proactive.feedback(kind, activity);

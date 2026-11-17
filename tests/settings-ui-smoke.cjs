@@ -52,7 +52,7 @@ async function run() {
     console.log('Web settings passed at 375 × 500 without desktop APIs');
     return;
   }
-  await until(() => js("!MemoryUI.running && document.querySelector('#mStatus').textContent.includes('memory.sqlite')"));
+  await until(() => js("!Settings.loading && !MemoryUI.running && document.querySelector('#mStatus').textContent.includes('memory.sqlite')"));
   const sectionIds = ['aiSettings', 'voiceSettings', 'agendaSettings', 'proactiveSettings', 'visionSettings', 'memorySettings'];
   for (const id of sectionIds) {
     const layout = await js(`(() => {
@@ -64,12 +64,15 @@ async function run() {
       const fields = [...section.querySelectorAll('select, summary, input[type=date], input[type=time], input[type=datetime-local]')];
       const date = section.querySelector('input:is([type=date], [type=time], [type=datetime-local])');
       return { body: body.clientWidth, scroll: body.scrollWidth, height: body.clientHeight,
-        viewport: window.innerHeight, active: document.querySelector('.settings-sections [aria-current]').dataset.section,
+        viewport: window.innerHeight, y: body.scrollTop, full: body.scrollHeight,
+        sections: [...document.querySelectorAll('[data-section]')].map(b => [b.dataset.section,
+          document.getElementById(b.dataset.section).getBoundingClientRect().top - body.getBoundingClientRect().top]),
+        active: document.querySelector('.settings-sections [aria-current]').dataset.section,
         consistent: fields.every(node => getComputedStyle(node).fontFamily === base),
         nativeDate: !date || getComputedStyle(date, '::-webkit-datetime-edit').fontFamily === base,
         save: !!document.querySelector('#sSave').getBoundingClientRect().height };
     })()`);
-    assert.equal(layout.active, id);
+    assert.equal(layout.active, id, JSON.stringify(layout));
     assert.ok(layout.scroll <= layout.body + 1, JSON.stringify({ mode, id, ...layout }));
     assert.ok(layout.height >= 100, JSON.stringify({ mode, id, ...layout }));
     assert.ok(layout.consistent && layout.nativeDate && layout.save);
@@ -79,11 +82,46 @@ async function run() {
       fs.writeFileSync(path.join(process.env.CHIERI_SETTINGS_SHOTS, mode + '-' + id + '.png'), screenshot.toPNG());
     }
   }
+  await js("document.querySelector('#settings .body').scrollTop = 1e6; true");
+  await until(() => js("document.querySelector('[data-section=desktopSettings]').getAttribute('aria-current') === 'location'"));
+  await js("document.querySelector('#settings .body').scrollTop = 0; true");
+  await until(() => js("document.querySelector('[data-section=aiSettings]').getAttribute('aria-current') === 'location'"));
   assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('主动说')"), true);
   await js("document.querySelector('#mAuto').value = 'ai'; document.querySelector('#mAuto').dispatchEvent(new Event('change'))");
-  await until(() => js("!MemoryUI.running && document.querySelector('#mModeHelp').textContent.includes('三条')"));
+  assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('三条')"), true);
   await js("document.querySelector('#mAuto').value = 'rules'; document.querySelector('#mAuto').dispatchEvent(new Event('change'))");
-  await until(() => js("!MemoryUI.running && document.querySelector('#mModeHelp').textContent.includes('才保存')"));
+  assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('才保存')"), true);
+  assert.equal(await js("petAPI.memory('status').then(s => s.mode)"), 'off');
+  await js("window.confirm = () => false; Settings.close(); true");
+  assert.equal(await js("document.querySelector('#settings').classList.contains('hidden')"), false);
+  await js(`document.querySelector('#sAmbient').value = '15';
+    document.querySelector('#pLimit').value = '7';
+    document.querySelector('#visModel').value = 'vision-test';
+    document.querySelector('#visKey').value = 'test-vision-key';
+    Settings.save()`);
+  assert.equal(await js("petAPI.memory('status').then(s => s.mode)"), 'rules');
+  assert.equal(await js("petAPI.companion('options').then(s => s.limit)"), 7);
+  assert.equal(await js("petAPI.getSettings().then(s => s.ambientMinutes)"), 15);
+  await js('Settings.open(); true');
+  await until(() => js('!Settings.loading'));
+  await js("document.querySelector('#visKeyShow').click(); true");
+  await until(() => js("document.querySelector('#visKey').type === 'text'"));
+  assert.equal(await js("document.querySelector('#visKey').value"), 'test-vision-key');
+  assert.equal(await js("Settings.changed('vision')"), false);
+  await js("document.querySelector('#sAmbient').value = '0'; window.confirm = () => true; Settings.close(); true");
+  assert.equal(await js("petAPI.getSettings().then(s => s.ambientMinutes)"), 15);
+  const ambient = await js(`(async () => {
+    const options = await CompanionUI.call('options');
+    await CompanionUI.call('configure', {...options, quietFrom:'00:00', quietTo:'00:00', manual:'normal'});
+    Store.data.ambientMinutes = 5;
+    lastAmbient = 0; ambientCheck = 0; bubble.classList.add('hidden');
+    S.t = 290; await ambientSay('模拟一句'); const early = bubble.classList.contains('hidden');
+    S.t = 310; await ambientSay('模拟一句'); const due = !bubble.classList.contains('hidden');
+    bubble.classList.add('hidden'); S.t = 330; await ambientSay('不应重播'); const repeated = !bubble.classList.contains('hidden');
+    Store.data.ambientMinutes = 0; S.t = 1000; await ambientSay('关闭后不播放'); const disabled = bubble.classList.contains('hidden');
+    return {early, due, repeated, disabled};
+  })()`);
+  assert.deepEqual(ambient, { early: true, due: true, repeated: false, disabled: true });
   await js("window.confirm = () => false; MemoryUI.propose('我喜欢骑自行车')");
   assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 0);
   await js("window.confirm = () => true; MemoryUI.propose('我喜欢骑自行车')");

@@ -21,15 +21,20 @@ const MemoryUI = {
       $('#mLimit').disabled = $('#mBudget').disabled = !$('#mEnabled').checked;
     }
   },
-  open() { return this.run(() => this.refresh()); },
-  async refresh() {
+  open() { return this.run(() => this.refresh(true)); },
+  readOptions() {
+    return { enabled: $('#mEnabled').checked, mode: $('#mAuto').value, limit: +$('#mLimit').value, budget: +$('#mBudget').value };
+  },
+  async refresh(loadOptions = false) {
     const status = await this.request('status');
     $('#mStatus').textContent = status.file + (status.error ? ' · ' + status.error : ' · ' + status.count + ' 条当前记忆');
-    $('#mEnabled').checked = status.enabled;
-    $('#mAuto').value = status.mode;
-    $('#mLimit').value = status.limit;
-    $('#mBudget').value = status.budget;
-    this.modeHelp();
+    if (loadOptions) {
+      $('#mEnabled').checked = status.enabled;
+      $('#mAuto').value = status.mode;
+      $('#mLimit').value = status.limit;
+      $('#mBudget').value = status.budget;
+      this.modeHelp();
+    }
     const rows = status.lastUsed.map(row => {
       const el = document.createElement('li');
       el.textContent = row.content + (row.match?.length ? ' · 匹配 ' + row.match.join('、') : ' · 主动陪伴选用');
@@ -50,6 +55,7 @@ const MemoryUI = {
     await this.history();
   },
   modeHelp() {
+    $('#mAuto').disabled = $('#mLimit').disabled = $('#mBudget').disabled = !$('#mEnabled').checked;
     const explanations = {
       off: '你主动说「记住」或明确更正时，千绘莉仍会请你确认。',
       rules: '千绘莉会在本机识别可能值得记住的内容，经你确认才保存。',
@@ -141,10 +147,7 @@ const MemoryUI = {
   },
   init() {
     if (!window.petAPI) return;
-    $('#mEnabled').onchange = $('#mAuto').onchange = $('#mLimit').onchange = $('#mBudget').onchange = () => this.run(async () => {
-      await this.request('options', { enabled: $('#mEnabled').checked, mode: $('#mAuto').value, limit: +$('#mLimit').value, budget: +$('#mBudget').value });
-      await this.refresh();
-    });
+    $('#mEnabled').onchange = $('#mAuto').onchange = () => this.modeHelp();
     $('#mSearch').onclick = $('#mFilter').onchange = $('#mTypeFilter').onchange = () => this.run(async () => { this.offset = 0; await this.list(); });
     $('#mPrev').onclick = () => this.run(async () => { this.offset = Math.max(0, this.offset - 40); await this.list(); });
     $('#mNext').onclick = () => this.run(async () => { this.offset += 40; await this.list(); });

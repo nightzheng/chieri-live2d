@@ -117,6 +117,7 @@ module.exports = function registerVision(trustedWindow, activeWindow) {
 
   const operations = {
     state,
+    revealKey: () => config.key,
     async save(_, value) {
       const next = validateConfig(value);
       if (typeof value.key !== 'string' || value.key.length > 1024 || /[\r\n\0]/.test(value.key) || typeof value.clearKey !== 'boolean') {

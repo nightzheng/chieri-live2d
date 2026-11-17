@@ -46,6 +46,8 @@ const VisionUI = {
     for (const [key, value] of Object.entries({ Provider: c.provider, Base: c.base, Model: c.model, Size: c.size,
       Quality: c.quality, Timeout: c.timeout })) $('#vis' + key).value = value;
     $('#visKey').value = '';
+    this.revealedKey = '';
+    Settings.maskKey($('#visKey'), $('#visKeyShow'));
     $('#visClearKey').checked = false;
     $('#visKey').placeholder = c.hasKey ? '已加密保存，留空保留' : '';
     $('#visConfigStatus').textContent = state.configError || (state.supported ? '视觉设置独立于聊天服务' : '当前平台不支持屏幕查看');
@@ -72,21 +74,27 @@ const VisionUI = {
     try { await this.call(clear ? 'clear' : 'stop'); $('#visStatus').textContent = clear ? '已清除视觉上下文' : '视觉会话已停止'; }
     catch (e) { $('#visStatus').textContent = e.message; }
   },
-  async save() {
-    this.applyConfig(await this.call('save', {
+  readOptions() {
+    const key = $('#visKey').value;
+    return {
       enabled: $('#visEnabled').checked, provider: $('#visProvider').value, base: $('#visBase').value.trim(),
-      model: $('#visModel').value, key: $('#visKey').value, clearKey: $('#visClearKey').checked,
+      model: $('#visModel').value, key: key === this.revealedKey ? '' : key, clearKey: $('#visClearKey').checked,
       size: +$('#visSize').value, quality: +$('#visQuality').value, timeout: +$('#visTimeout').value,
-    }));
+    };
+  },
+  async saveOptions(options) {
+    this.applyConfig(await this.call('save', options));
     $('#visSource').replaceChildren();
     $('#visConfigStatus').textContent = '视觉设置已保存';
   },
   async sources() {
+    if (Settings.changed('vision')) throw new Error('请先保存全部设置，再选择共享来源。');
     const entries = await this.call('sources', $('#visKind').value);
     $('#visSource').replaceChildren(...entries.map(row => new Option(row.name, row.id)));
     $('#visStatus').textContent = entries.length ? '请选择来源并预览' : '没有可分享的来源';
   },
   async preview(epoch) {
+    if (Settings.changed('vision')) throw new Error('请先保存全部设置，再预览。');
     this.clearPreview();
     const result = await this.call('preview', { id: $('#visSource').value, question: $('#visQuestion').value });
     if (epoch !== this.epoch) return;
@@ -97,6 +105,7 @@ const VisionUI = {
     $('#visStatus').textContent = '请检查预览。两分钟内可确认发送。';
   },
   async send(observe, epoch) {
+    if (Settings.changed('vision')) throw new Error('请先保存全部设置，再发送截图。');
     const token = this.token;
     if (!token) return;
     const value = await this.call(observe ? 'observe' : 'send', observe
@@ -131,12 +140,24 @@ const VisionUI = {
   init() {
     if (!window.petAPI) return;
     window.petAPI.onVision(state => this.render(state));
-    const ops = { Save: () => this.save(), Sources: () => this.sources(), Preview: epoch => this.preview(epoch),
+    const ops = { Sources: () => this.sources(), Preview: epoch => this.preview(epoch),
       Send: epoch => this.send(false, epoch), Observe: epoch => this.send(true, epoch), Character: epoch => this.character(epoch),
       Remember: () => this.remember(), Speak: () => this.speak() };
     for (const [key, fn] of Object.entries(ops)) $('#vis' + key).onclick = () => this.task(fn);
+    $('#visKeyShow').onclick = () => this.task(async () => {
+      const input = $('#visKey'), button = $('#visKeyShow');
+      if (input.type === 'password' && !input.value && !$('#visClearKey').checked) {
+        const key = await this.call('revealKey');
+        if ($('#settings').classList.contains('hidden') || input.value || $('#visClearKey').checked) return;
+        input.value = this.revealedKey = key;
+      }
+      Settings.maskKey(input, button, input.type === 'password');
+    });
     for (const [key, mode] of [['Connection', 'connection'], ['TestImage', 'image']]) $('#vis' + key).onclick = () =>
-      this.task(async () => { $('#visStatus').textContent = await this.call('test', mode) || '测试已取消'; });
+      this.task(async () => {
+        if (Settings.changed('vision')) throw new Error('请先保存全部设置，再测试视觉服务。');
+        $('#visStatus').textContent = await this.call('test', mode) || '测试已取消';
+      });
     $('#visStop').onclick = $('#visGlobalStop').onclick = () => this.stop();
     $('#visClear').onclick = () => this.stop(true);
     $('#visKind').onchange = () => { $('#visSource').replaceChildren(); if (this.token) this.stop(); };

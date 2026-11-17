@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS = {
   bubbleOnly: false, // chat without the message list: just an input box, her replies in the speech bubble
   bg: 'auto',        // stage background: auto | day | night | plain (applyBg in ui.js)
   sleepAfter: 180,   // seconds without mouse movement before she dozes off (0 = never)
+  ambientMinutes: 5,
   pet: { level: 'floating', scale: 1, clickThrough: false },
   rec: { on: false, hud: true, clean: false },   // recording mode (see ui.js), kept across windows
   tts: mergeTts(),   // her voice (voice.js)
@@ -70,12 +71,16 @@ const Store = {
     if (!this.data.persona || OLD_PERSONAS.includes(this.data.persona)) this.data.persona = DEFAULT_PERSONA;
     return this.data;
   },
-  async save(patch) {
+  async save(patch, strict = false) {
+    const previous = this.data;
     if (patch) this.data = { ...this.data, ...patch, pet: { ...this.data.pet, ...(patch.pet || {}) }, tts: mergeTts({ ...this.data.tts, ...(patch.tts || {}) }) };
     try {
       if (window.petAPI) await window.petAPI.setSettings(this.data);
       else localStorage.setItem('l2d.settings', JSON.stringify(this.data));
-    } catch (e) { console.warn('settings not saved', e); }
+    } catch (e) {
+      if (strict) { this.data = previous; throw e; }
+      console.warn('settings not saved', e);
+    }
   },
 };
 

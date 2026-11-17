@@ -96,20 +96,21 @@ const CompanionUI = {
     const label = p.state + ' · ' + p.reason + (p.lastSpoken ? ' · 上次主动发言 ' + new Date(p.lastSpoken).toLocaleString() : '');
     if ($('#pState').textContent !== label) $('#pState').textContent = label;
   },
-  async configure(mode = '') {
-    const options = mode ? { ...await this.call('options'), manual: mode } : {
+  readOptions() {
+    return {
       enabled: $('#pEnabled').checked, ai: $('#pAI').checked, memory: $('#pMemory').checked, voice: $('#pVoice').checked,
       frequency: $('#pFrequency').value, min: +$('#pMin').value, limit: +$('#pLimit').value,
       quietFrom: $('#pQuietFrom').value, quietTo: $('#pQuietTo').value,
       adaptive: $('#pAdaptive').checked, strength: $('#pStrength').value, manual: $('#pManual').value,
     };
+  },
+  async saveOptions(options) {
     await this.call('configure', options);
     if (Voice.currentKind === 'proactive' && (!options.enabled || options.manual !== 'normal')) Voice.interrupt();
-    await this.loadOptions();
-    $('#pFeedback').textContent = mode === 'quiet' ? '已暂停主动闲聊，日程提醒继续运行' : '设置已保存';
   },
+  lowPriorityVoice() { return ['proactive', 'ambient'].includes(Voice.currentKind); },
   activity(kind = 'touch') {
-    if (Voice.currentKind === 'proactive') Voice.interrupt();
+    if (this.lowPriorityVoice()) Voice.interrupt();
     const now = Date.now();
     if (!window.petAPI || (kind !== 'chat' && now - this.activityAt < 1000)) return;
     this.activityAt = now;
@@ -119,7 +120,7 @@ const CompanionUI = {
     return Chat.sending || AI.interacting > 0 || Voice.pending > 0 || Voice.playing;
   },
   reminderBusy() {
-    return Chat.sending || AI.interacting > 0 || (Voice.currentKind !== 'proactive' && (Voice.pending > 0 || Voice.playing));
+    return Chat.sending || AI.interacting > 0 || (!this.lowPriorityVoice() && (Voice.pending > 0 || Voice.playing));
   },
   async poll() {
     if (this.polling) return;
@@ -137,7 +138,7 @@ const CompanionUI = {
     } finally { this.polling = false; }
   },
   deliver(event) {
-    if (Voice.currentKind === 'proactive') Voice.interrupt();
+    if (this.lowPriorityVoice()) Voice.interrupt();
     const words = '时间到了，记得' + event.title + '。';
     Chat.card('happy', words, ['查看提醒', () => this.showAgenda()]);
     say(words, 'smile', 5, { kind: 'reminder', voice: !!event.voice, ja: '時間ですよ。予定を確認してくださいね。' });
@@ -198,15 +199,12 @@ const CompanionUI = {
       await this.refresh();
     });
     $('#pFrequency').onchange = () => { $('#pMin').disabled = $('#pFrequency').value !== 'custom'; };
-    $('#pSave').onclick = () => this.task('#pFeedback', () => this.configure());
-    $('#pPause').onclick = () => this.task('#pFeedback', () => this.configure('quiet'));
-    $('#pResume').onclick = () => this.task('#pFeedback', () => this.configure('normal'));
     // Only keep the time of input in Chieri. No keys or text are inspected or persisted.
     for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => this.activity(), true);
     window.petAPI.onAgenda(() => this.showAgenda());
     window.petAPI.onProactivePaused(() => {
-      if (Voice.currentKind === 'proactive') Voice.interrupt();
-      if (!$('#settings').classList.contains('hidden')) this.task('#pFeedback', () => this.loadOptions());
+      if (this.lowPriorityVoice()) Voice.interrupt();
+      if (!$('#settings').classList.contains('hidden')) this.task('#pFeedback', () => this.refreshState());
     });
     setInterval(() => this.poll(), 2000);
   },

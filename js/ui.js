@@ -178,19 +178,49 @@ function localReply(text) {
 
 // ---------------------------------------------------------------- settings
 const Settings = {
+  baseline: {},
+  loading: false,
+  saving: false,
   open() {
+    if (!$('#settings').classList.contains('hidden')) return;
     const s = Store.data, sel = $('#sPreset');
     sel.innerHTML = Object.entries(AI_PRESETS).map(([k, p]) => `<option value="${k}">${p.label}</option>`).join('');
     sel.value = AI_PRESETS[s.preset] ? s.preset : 'custom';
     $('#sBase').value = s.baseUrl; $('#sKey').value = s.apiKey; $('#sModel').value = s.model;
+    this.maskKey($('#sKey'), $('#sKeyShow'));
     $('#sName').value = s.name; $('#sPersona').value = s.persona;
     $('#sAiChat').checked = s.aiChat; $('#sAiReact').checked = s.aiReact; $('#sBubbleOnly').checked = !!s.bubbleOnly; $('#sSleep').value = String(s.sleepAfter);
     $('#sLevel').value = s.pet.level; $('#sScale').value = s.pet.scale; $('#sClick').checked = s.pet.clickThrough; $('#sStartPet').checked = !!s.pet.startAsPet;
     $('#sScaleOut').textContent = Math.round(s.pet.scale * 100) + '%';
+    $('#sAmbient').value = String([0, 1, 5, 15, 30].includes(s.ambientMinutes) ? s.ambientMinutes : 5);
     $('#sTestOut').textContent = ''; $('#sTestOut').className = '';
-    if (DESKTOP) { this.autoStart(); MemoryUI.open(); CompanionUI.open(); VisionUI.open(); }
     VoiceUI.open();
     this.note(); $('#settings').classList.remove('hidden'); petSide(); this.markSection();
+    this.baseline = {};
+    this.capture('regular');
+    if (DESKTOP) {
+      this.loading = $('#sSave').disabled = $('#settings .body').inert = true;
+      Promise.allSettled([this.autoStart(), MemoryUI.open(), CompanionUI.open(), VisionUI.open()]).then(() => {
+        for (const key of ['startup', 'memory', 'proactive', 'vision']) this.capture(key);
+        this.loading = $('#sSave').disabled = $('#settings .body').inert = false;
+      });
+    }
+  },
+  maskKey(input, button, visible = false) {
+    input.type = visible ? 'text' : 'password';
+    button.textContent = visible ? '隐藏' : '显示';
+    button.setAttribute('aria-pressed', String(visible));
+  },
+  value(key) {
+    if (key === 'regular') return this.read();
+    if (key === 'startup') return $('#sAutoStart').checked;
+    if (key === 'memory') return MemoryUI.readOptions();
+    if (key === 'proactive') return CompanionUI.readOptions();
+    return VisionUI.readOptions();
+  },
+  capture(key) { this.baseline[key] = JSON.stringify(this.value(key)); },
+  changed(key) {
+    return Object.hasOwn(this.baseline, key) && this.baseline[key] !== JSON.stringify(this.value(key));
   },
   goTo(section) {
     const body = $('#settings .body'), target = document.getElementById(section);
@@ -199,9 +229,15 @@ const Settings = {
   },
   markSection() {
     if (!DESKTOP || $('#settings').classList.contains('hidden')) return;
-    const edge = $('#settings .body').getBoundingClientRect().top + 12;
+    const body = $('#settings .body'), viewport = body.getBoundingClientRect(), edge = viewport.top + 16;
     const buttons = [...document.querySelectorAll('#settings [data-section]')];
-    const active = buttons.findLast(btn => document.getElementById(btn.dataset.section).getBoundingClientRect().top <= edge) || buttons[0];
+    const last = document.getElementById(buttons.at(-1).dataset.section).getBoundingClientRect();
+    const atBottom = body.scrollTop > 2 && last.top > edge && last.top < viewport.bottom &&
+      Math.abs(body.scrollHeight - body.scrollTop - body.clientHeight) < 2;
+    const active = (body.scrollTop <= 2 ? buttons[0] : atBottom ? buttons.at(-1) : buttons.findLast(btn => {
+      const rect = document.getElementById(btn.dataset.section).getBoundingClientRect();
+      return rect.height && rect.top <= edge;
+    })) || buttons[0];
     for (const btn of buttons) {
       if (btn === active) btn.setAttribute('aria-current', 'location');
       else btn.removeAttribute('aria-current');
@@ -220,11 +256,17 @@ const Settings = {
       note.classList.toggle('hidden', !note.textContent);
     } catch (e) { box.checked = false; note.textContent = '读取开机启动设置失败：' + e.message; note.classList.remove('hidden'); }
   },
-  close() {
-    if ($('#settings').classList.contains('hidden')) return;
+  close(saved = false) {
+    if ($('#settings').classList.contains('hidden') || this.loading || (this.saving && !saved)) return;
+    if (!saved && Object.keys(this.baseline).some(key => this.changed(key)) &&
+        !window.confirm('还有未保存的设置，放弃修改并关闭？')) return;
     if (DESKTOP && VisionUI.token) VisionUI.stop();
     $('#settings').classList.add('hidden'); petSide();
-    if (PET && DESKTOP) window.petAPI.setScale(Store.data.pet.scale);   // undo a slider left unsaved
+    this.baseline = {};
+    if (DESKTOP) {
+      $('#visKey').value = VisionUI.revealedKey = '';
+      this.maskKey($('#visKey'), $('#visKeyShow'));
+    }
   },
   note() {
     const k = $('#sPreset').value, p = AI_PRESETS[k];
@@ -238,19 +280,43 @@ const Settings = {
       preset: k, kind: AI_PRESETS[k].kind, baseUrl: $('#sBase').value.trim(), apiKey: $('#sKey').value.trim(), model: $('#sModel').value.trim(),
       name: $('#sName').value.trim() || '千绘莉', persona: $('#sPersona').value.trim() || DEFAULT_PERSONA,
       aiChat: $('#sAiChat').checked, aiReact: $('#sAiReact').checked, bubbleOnly: $('#sBubbleOnly').checked, sleepAfter: +$('#sSleep').value,
+      ambientMinutes: +$('#sAmbient').value,
       pet: { level: $('#sLevel').value, scale: +$('#sScale').value, clickThrough: $('#sClick').checked, startAsPet: $('#sStartPet').checked },
       tts: VoiceUI.read(),
     };
   },
   async save() {
+    if (this.loading || this.saving) return;
+    this.saving = $('#sSave').disabled = $('#settings .body').inert = true;
     const was = Voice.engine(), chieri = JSON.stringify(Store.data.tts.chieri);
-    await Store.save(this.read()); applyNames();
-    if (DESKTOP) window.petAPI.applyPet(Store.data.pet);
-    // start with Windows lives in the system, not in Store: only touch it when the box says otherwise
-    if (DESKTOP && this.auto && $('#sAutoStart').checked !== this.auto.on) await window.petAPI.autoStart($('#sAutoStart').checked);
-    // switching to the local voice (or changing its Python / device) loads the model right away
-    if (Voice.engine() === 'chieri' && (was !== 'chieri' || chieri !== JSON.stringify(Store.data.tts.chieri))) window.petAPI.chieriStart({ restart: was === 'chieri' });
-    this.close(); petSide(); toast('设置已保存', 2600, 'happy');
+    const actions = {
+      vision: ['视觉', value => VisionUI.saveOptions(value)],
+      proactive: ['主动互动', value => CompanionUI.saveOptions(value)],
+      memory: ['记忆与数据', value => MemoryUI.request('options', value)],
+      regular: ['常规', async value => {
+        await Store.save(value, true);
+        applyNames();
+        if (DESKTOP && Voice.engine() === 'chieri' && (was !== 'chieri' || chieri !== JSON.stringify(Store.data.tts.chieri))) {
+          window.petAPI.chieriStart({ restart: was === 'chieri' });
+        }
+      }],
+      startup: ['开机自启', value => window.petAPI.autoStart(value)],
+    };
+    let label = '';
+    try {
+      for (const [key, [name, action]] of Object.entries(actions)) {
+        if (!this.changed(key)) continue;
+        label = name;
+        await action(this.value(key));
+        this.capture(key);
+      }
+      this.close(true);
+      toast('设置已保存', 2600, 'happy');
+    } catch (e) {
+      toast(label + '设置保存失败，未保存的修改仍在表单中。' + e.message, 6500, 'pout');
+    } finally {
+      this.saving = $('#sSave').disabled = $('#settings .body').inert = false;
+    }
   },
   async test() {
     const out = $('#sTestOut'), prev = Store.data;
@@ -284,8 +350,14 @@ const VoiceUI = {
     const e = TTS_ENGINES[this.eng], c = this.draft[this.eng] || {}, box = $('#vFields');
     box.innerHTML = (e.fields || []).map(([k, label, ph, type]) => Array.isArray(ph)
       ? `<label class="f"><span>${label}</span><select data-vk="${k}">${ph.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></label>`
-      : `<label class="f"><span>${label}</span><input data-vk="${k}" type="${type || 'text'}" placeholder="${ph}" spellcheck="false" autocomplete="off"></label>`).join('');
+      : type === 'password'
+        ? `<label class="f"><span>${label}</span><span class="pw"><input data-vk="${k}" type="password" placeholder="${ph}" spellcheck="false" autocomplete="off"><button type="button" class="mini" data-show-key>显示</button></span></label>`
+        : `<label class="f"><span>${label}</span><input data-vk="${k}" type="${type || 'text'}" placeholder="${ph}" spellcheck="false" autocomplete="off"></label>`).join('');
     box.querySelectorAll('[data-vk]').forEach(el => { el.value = c[el.dataset.vk] != null ? c[el.dataset.vk] : ''; });
+    box.querySelectorAll('[data-show-key]').forEach(button => {
+      const input = button.previousElementSibling;
+      button.onclick = () => Settings.maskKey(input, button, input.type === 'password');
+    });
     const preset = box.querySelector('[data-vk=preset]');
     if (preset) preset.onchange = () => { const p = TTS_OPENAI_PRESETS[preset.value]; if (preset.value !== 'custom') for (const k of ['baseUrl', 'model', 'voice']) box.querySelector(`[data-vk=${k}]`).value = p[k]; };
     $('#vChieri').classList.toggle('hidden', this.eng !== 'chieri');
@@ -343,7 +415,7 @@ const VoiceUI = {
   async pregen() {
     const out = $('#vPregenOut'), btn = $('#vPregen');
     if (Voice.pregenStop === false) { Voice.pregenStop = true; return; }
-    await Store.save(Settings.read());   // it runs on the saved settings: it may outlast the dialog
+    if (Settings.changed('regular')) { out.textContent = '请先保存设置后再预生成。'; return; }
     btn.textContent = '停止'; out.className = '';
     try {
       const r = await Voice.pregen((n, all, failed) => { out.textContent = `${n} / ${all}${failed ? `（失败 ${failed}）` : ''}`; });
@@ -521,11 +593,10 @@ function initUI() {
   $('#settings').addEventListener('pointerdown', e => { if (e.target.id === 'settings') Settings.close(); });
   $('#sSave').onclick = () => Settings.save();
   $('#sTest').onclick = () => Settings.test();
-  $('#sKeyShow').onclick = () => { const k = $('#sKey'); k.type = k.type === 'password' ? 'text' : 'password'; $('#sKeyShow').textContent = k.type === 'password' ? '显示' : '隐藏'; };
+  $('#sKeyShow').onclick = () => Settings.maskKey($('#sKey'), $('#sKeyShow'), $('#sKey').type === 'password');
   $('#sPreset').onchange = () => { const p = AI_PRESETS[$('#sPreset').value]; if (p.baseUrl || $('#sPreset').value !== 'custom') { $('#sBase').value = p.baseUrl; $('#sModel').value = p.model; } Settings.note(); };
   $('#sScale').oninput = () => {
     $('#sScaleOut').textContent = Math.round($('#sScale').value * 100) + '%';
-    if (PET && DESKTOP) window.petAPI.setScale(+$('#sScale').value);   // preview live, kept on save
   };
   window.addEventListener('keydown', e => { if (e.key === 'Escape') Settings.close(); });
   VoiceUI.init();
