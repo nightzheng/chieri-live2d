@@ -18,6 +18,7 @@ const MemoryUI = {
       this.running = false;
       $('#mEnabled').disabled = false;
       $('#mAuto').disabled = !$('#mEnabled').checked;
+      $('#mLimit').disabled = $('#mBudget').disabled = !$('#mEnabled').checked;
     }
   },
   open() { return this.run(() => this.refresh()); },
@@ -28,6 +29,7 @@ const MemoryUI = {
     $('#mAuto').value = status.mode;
     $('#mLimit').value = status.limit;
     $('#mBudget').value = status.budget;
+    this.modeHelp();
     const rows = status.lastUsed.map(row => {
       const el = document.createElement('li');
       el.textContent = row.content + (row.match?.length ? ' · 匹配 ' + row.match.join('、') : ' · 主动陪伴选用');
@@ -47,13 +49,21 @@ const MemoryUI = {
     await this.list();
     await this.history();
   },
+  modeHelp() {
+    const explanations = {
+      off: '你主动说「记住」或明确更正时，千绘莉仍会请你确认。',
+      rules: '千绘莉会在本机识别可能值得记住的内容，经你确认才保存。',
+      ai: '规则无法判断时，可请聊天服务辅助，最多发送三条近期用户消息。每 10 分钟最多一次，每 24 小时最多六次。经你确认才保存。',
+    };
+    $('#mModeHelp').textContent = $('#mEnabled').checked ? explanations[$('#mAuto').value] : '已暂停候选提取和对话引用。你仍可管理已有记忆。';
+  },
   async propose(text) {
     try {
       const proposal = await this.request('propose', text);
       if (!proposal) {
         this.request('semantic', text).then(candidate => {
           if (!candidate) return;
-          Chat.card('happy', '识别到一条记忆候选：' + candidate.content, ['确认或忽略', async () => {
+          Chat.card('happy', '待确认的记忆：' + candidate.content, ['查看并确认', async () => {
             if (!window.confirm('保存这条 AI 候选？请核对是否准确。\n\n' + candidate.content)) return;
             try {
               await this.request('confirmSemantic', candidate.token);

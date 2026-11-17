@@ -38,3 +38,9 @@ $env:CHIERI_TEST_PYTHON = 'D:\miniconda\envs\Chieri\python.exe'
 | 千绘莉-完整版-Setup-1.3.0.exe | `48003F7E7A6D46A3AC43F504D69B54CF8471880AEE285A4BBBE41CF02A970208` |
 
 实机复测请使用可还原 Windows 虚拟机，在默认和自定义安装目录分别安装 1.2.9，并准备默认和自定义 SQLite 样本。正常退出应用后覆盖安装对应的 1.3.0，检查加密配置、Python 路径、聊天、记忆、提醒及升级前备份。两个安装包均未签名。来自更早版本的旧卸载器风险见 [1.2.8 验证报告](persistent-memory-verification.md)。
+
+### 1.3.2 设置页回归
+
+设置区域沿用原有字体，统一了日期、时间、提示、折叠项和数据列表的字号与行距。低高度时压缩标题、导航和底部按钮。分类导航高亮当前区域，可用键盘访问开关。
+
+运行 `tests/settings-ui-smoke.cjs`，通过 `CHIERI_SETTINGS_MODE` 分别选择 `studio`、`pet` 和 `web`。Windows Electron 核对了主窗口、最小比例桌宠窗口、无桌面接口的窄网页布局。测试覆盖字体声明、横向截断、分类导航和候选提示。用合成对话验证了取消候选后长期库无记录，确认后才入库。外部浏览器和其他系统字体组合未逐一实测。

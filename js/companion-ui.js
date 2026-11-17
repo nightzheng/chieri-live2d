@@ -18,7 +18,7 @@ const CompanionUI = {
   showAgenda() {
     Settings.open();
     $('#aEventsBox').open = true;
-    $('#agendaSettings').scrollIntoView({ block: 'start' });
+    Settings.goTo('agendaSettings');
   },
   async open() {
     await Promise.all([

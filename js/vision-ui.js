@@ -57,7 +57,7 @@ const VisionUI = {
   show(question) {
     Settings.open();
     $('#visQuestion').value = question.slice(0, 400);
-    $('#visionSettings').scrollIntoView({ block: 'start' });
+    Settings.goTo('visionSettings');
     $('#visQuestion').focus();
   },
   handleChat(text) {

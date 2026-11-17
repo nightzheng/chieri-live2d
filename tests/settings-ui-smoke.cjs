@@ -1,0 +1,94 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { setTimeout: delay } = require('node:timers/promises');
+const { app, BrowserWindow } = require('electron');
+
+const mode = process.env.CHIERI_SETTINGS_MODE || 'studio';
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chieri-settings-test-'));
+for (const name of ['profile', 'local', 'temp']) fs.mkdirSync(path.join(root, name));
+app.setPath('userData', path.join(root, 'profile'));
+app.setPath('temp', path.join(root, 'temp'));
+Object.assign(process.env, { LOCALAPPDATA: path.join(root, 'local'), TEMP: path.join(root, 'temp'), L2D_START: mode });
+fs.writeFileSync(path.join(root, 'profile', 'settings.json'), JSON.stringify({ pet: { scale: .4 } }));
+require(path.resolve(process.env.CHIERI_TEST_APP || path.join(__dirname, '..'), 'electron/main.js'));
+
+async function until(check) {
+  for (let i = 0; i < 100; i++) {
+    try { const result = await check(); if (result) return result; } catch (_) {}
+    await delay(120);
+  }
+  throw new Error('Timed out waiting for settings UI');
+}
+
+async function run() {
+  const desktop = await until(() => BrowserWindow.getAllWindows()[0]);
+  const win = mode === 'web' ? new BrowserWindow({ show: false, width: 375, height: 500 }) : desktop;
+  if (mode === 'web') {
+    await win.loadURL('app://local/index.html');
+    win.setContentSize(375, 500);
+  } else if (mode === 'studio') {
+    win.setContentSize(720, 560);
+  }
+  const js = source => win.webContents.executeJavaScript(source);
+  await until(() => js("typeof Settings !== 'undefined' && !Chat.sending && !!document.querySelector('#loading.done')"));
+  await js('Settings.open(); true');
+  await delay(550);
+  if (mode === 'web') {
+    const web = await js(`({
+      desktop: !!window.petAPI, agenda: getComputedStyle(document.querySelector('#agendaSettings')).display,
+      navigation: getComputedStyle(document.querySelector('.settings-sections')).display,
+      save: !!document.querySelector('#sSave').getBoundingClientRect().height,
+      widths: [document.querySelector('#settings .body').clientWidth, document.querySelector('#settings .body').scrollWidth]
+    })`);
+    assert.equal(web.desktop, false);
+    assert.equal(web.agenda, 'none');
+    assert.equal(web.navigation, 'none');
+    assert.ok(web.save);
+    assert.ok(web.widths[1] <= web.widths[0] + 1, JSON.stringify(web));
+    console.log('Web settings passed at 375 × 500 without desktop APIs');
+    return;
+  }
+  await until(() => js("!MemoryUI.running && document.querySelector('#mStatus').textContent.includes('memory.sqlite')"));
+  const sectionIds = ['aiSettings', 'voiceSettings', 'agendaSettings', 'proactiveSettings', 'visionSettings', 'memorySettings'];
+  for (const id of sectionIds) {
+    const layout = await js(`(() => {
+      const id = ${JSON.stringify(id)}, body = document.querySelector('#settings .body');
+      const section = document.getElementById(id);
+      for (const details of section.querySelectorAll('details')) details.open = true;
+      document.querySelector('[data-section="' + id + '"]').click();
+      const base = getComputedStyle(body).fontFamily;
+      const fields = [...section.querySelectorAll('select, summary, input[type=date], input[type=time], input[type=datetime-local]')];
+      const date = section.querySelector('input:is([type=date], [type=time], [type=datetime-local])');
+      return { body: body.clientWidth, scroll: body.scrollWidth, height: body.clientHeight,
+        viewport: window.innerHeight, active: document.querySelector('.settings-sections [aria-current]').dataset.section,
+        consistent: fields.every(node => getComputedStyle(node).fontFamily === base),
+        nativeDate: !date || getComputedStyle(date, '::-webkit-datetime-edit').fontFamily === base,
+        save: !!document.querySelector('#sSave').getBoundingClientRect().height };
+    })()`);
+    assert.equal(layout.active, id);
+    assert.ok(layout.scroll <= layout.body + 1, JSON.stringify({ mode, id, ...layout }));
+    assert.ok(layout.height >= 100, JSON.stringify({ mode, id, ...layout }));
+    assert.ok(layout.consistent && layout.nativeDate && layout.save);
+    if (process.env.CHIERI_SETTINGS_SHOTS && ['agendaSettings','memorySettings'].includes(id)) {
+      await delay(180);
+      const screenshot = await win.webContents.capturePage();
+      fs.writeFileSync(path.join(process.env.CHIERI_SETTINGS_SHOTS, mode + '-' + id + '.png'), screenshot.toPNG());
+    }
+  }
+  assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('主动说')"), true);
+  await js("document.querySelector('#mAuto').value = 'ai'; document.querySelector('#mAuto').dispatchEvent(new Event('change'))");
+  await until(() => js("!MemoryUI.running && document.querySelector('#mModeHelp').textContent.includes('三条')"));
+  await js("document.querySelector('#mAuto').value = 'rules'; document.querySelector('#mAuto').dispatchEvent(new Event('change'))");
+  await until(() => js("!MemoryUI.running && document.querySelector('#mModeHelp').textContent.includes('才保存')"));
+  await js("window.confirm = () => false; MemoryUI.propose('我喜欢骑自行车')");
+  assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 0);
+  await js("window.confirm = () => true; MemoryUI.propose('我喜欢骑自行车')");
+  assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 1);
+  console.log(mode + ' settings passed font, clipping, navigation and memory confirmation checks');
+}
+
+run().then(() => app.quit(), error => { console.error(error); app.exit(1); });

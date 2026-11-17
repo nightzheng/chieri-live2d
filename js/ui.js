@@ -190,7 +190,22 @@ const Settings = {
     $('#sTestOut').textContent = ''; $('#sTestOut').className = '';
     if (DESKTOP) { this.autoStart(); MemoryUI.open(); CompanionUI.open(); VisionUI.open(); }
     VoiceUI.open();
-    this.note(); $('#settings').classList.remove('hidden'); petSide();
+    this.note(); $('#settings').classList.remove('hidden'); petSide(); this.markSection();
+  },
+  goTo(section) {
+    const body = $('#settings .body'), target = document.getElementById(section);
+    body.scrollTop += target.getBoundingClientRect().top - body.getBoundingClientRect().top - 4;
+    this.markSection();
+  },
+  markSection() {
+    if (!DESKTOP || $('#settings').classList.contains('hidden')) return;
+    const edge = $('#settings .body').getBoundingClientRect().top + 12;
+    const buttons = [...document.querySelectorAll('#settings [data-section]')];
+    const active = buttons.findLast(btn => document.getElementById(btn.dataset.section).getBoundingClientRect().top <= edge) || buttons[0];
+    for (const btn of buttons) {
+      if (btn === active) btn.setAttribute('aria-current', 'location');
+      else btn.removeAttribute('aria-current');
+    }
   },
   // the login item as Windows has it; {on} counts only when Task Manager hasn't turned it off
   auto: null,
@@ -500,8 +515,9 @@ function initUI() {
   inp.addEventListener('input', () => { inp.style.height = ''; inp.style.height = Math.min(96, inp.scrollHeight) + 'px'; });
   document.querySelectorAll('#settings [data-close]').forEach(b => b.onclick = () => Settings.close());
   document.querySelectorAll('#settings [data-section]').forEach(b => b.onclick = () => {
-    document.getElementById(b.dataset.section).scrollIntoView({ block: 'start' });
+    Settings.goTo(b.dataset.section);
   });
+  $('#settings .body').addEventListener('scroll', () => Settings.markSection(), { passive: true });
   $('#settings').addEventListener('pointerdown', e => { if (e.target.id === 'settings') Settings.close(); });
   $('#sSave').onclick = () => Settings.save();
   $('#sTest').onclick = () => Settings.test();
