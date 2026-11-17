@@ -226,6 +226,23 @@
           <label class="f"><span>安静结束</span><input type="time" id="pQuietTo"></label>
           <label class="f"><span>每日上限</span><input type="number" id="pLimit" min="1" max="24"></label>
           <label class="sw"><input type="checkbox" id="pAI"><i></i>用聊天模型生成主动台词</label>
+          <label class="sw"><input type="checkbox" id="pVision"><i></i>主动闲聊时查看屏幕</label>
+          <label class="f"><span>查看频率</span><select id="pVisionEvery"><option value="1">每次主动闲聊</option><option value="2">每 2 次主动闲聊</option><option value="3">每 3 次主动闲聊</option><option value="5">每 5 次主动闲聊</option><option value="10">每 10 次主动闲聊</option></select></label>
+          <details>
+            <summary>授权主动观察</summary>
+            <p class="note">先保存主动闲聊、AI 台词和看屏幕选项，并配置视觉 API。每次授权从零开始计数。若闲聊间隔较长，会话可能在达到查看次数前到期。</p>
+            <label class="f"><span>共享范围</span><select id="pvKind"><option value="screen">显示器</option><option value="window">窗口</option></select></label>
+            <label class="f"><span>共享来源</span><select id="pvSource"></select></label>
+            <label class="f"><span>时长</span><select id="pvDuration"><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="15">15 分钟</option><option value="30" selected>30 分钟</option><option value="60">1 小时</option><option value="120">2 小时</option><option value="240">4 小时</option></select></label>
+            <div class="row2 wrap">
+              <button type="button" class="mini" id="pvSources">列出共享来源</button>
+              <button type="button" class="mini" id="pvPreview">预览截图</button>
+              <button type="button" class="mini" id="pvStart" disabled>授权本次观察</button>
+              <button type="button" class="mini" id="pvStop">停止观察</button>
+            </div>
+            <p class="note action-status" id="pvStatus" role="status"></p>
+            <img id="pvImage" class="vision-preview hidden" alt="主动观察的共享预览">
+          </details>
           <label class="sw"><input type="checkbox" id="pMemory"><i></i>允许给聊天模型附带相关长期记忆</label>
           <label class="sw"><input type="checkbox" id="pAdaptive"><i></i>根据回应调整主动频率</label>
           <label class="f"><span>调节强度</span><select id="pStrength"><option value="gentle">轻度</option><option value="medium">适中</option><option value="strong">明显</option></select></label>
@@ -251,6 +268,7 @@
             <button type="button" class="mini" id="visConnection">测试连接</button>
             <button type="button" class="mini" id="visTestImage">分析合成测试图</button>
           </div>
+          <p class="note action-status" id="visTestFeedback" role="status"></p>
           <p class="note" id="visConfigStatus"></p>
           <p class="note">所选画面可能包含密码或私人信息。单次发送和开始观察都需要确认。截图仅在内存中处理，描述默认不写入聊天或长期记忆。</p>
           <label class="f"><span>范围</span><select id="visKind"><option value="screen">显示器</option><option value="window">窗口</option></select></label>
@@ -262,15 +280,16 @@
             <button type="button" class="mini" id="visSend" disabled>发送这张截图</button>
             <button type="button" class="mini" id="visStop">停止 / 丢弃截图</button>
           </div>
-          <img id="visImage" class="hidden" alt="将发送的截图预览">
+          <p class="note action-status" id="visStatus" role="status"></p>
+          <img id="visImage" class="vision-preview hidden" alt="将发送的截图预览">
           <details>
-            <summary>限时观察</summary>
+            <summary>限时定时查看</summary>
             <p class="note">开始前先预览和确认。隐藏窗口、锁屏、休眠或到期时结束。</p>
             <label class="f"><span>时长</span><select id="visDuration"><option>10</option><option>15</option><option selected>30</option></select></label>
             <label class="f"><span>每隔几分钟</span><select id="visInterval"><option>5</option><option>10</option><option>15</option></select></label>
             <button type="button" class="mini" id="visObserve" disabled>开始观察</button>
+            <p class="note action-status" id="visTimedFeedback" role="status"></p>
           </details>
-          <p class="note" id="visStatus" role="status"></p>
           <p id="visResult"></p>
           <div class="row2 wrap">
             <button type="button" class="mini" id="visCharacter">用角色语气回应</button>
@@ -278,6 +297,7 @@
             <button type="button" class="mini" id="visRemember">保存到长期记忆</button>
             <button type="button" class="mini" id="visClear">清除视觉上下文</button>
           </div>
+          <p class="note action-status" id="visResultFeedback" role="status"></p>
         </fieldset>
         <fieldset class="desk-only" id="memorySettings">
           <legend>记忆与数据</legend>
@@ -288,7 +308,6 @@
           <label class="f"><span>引用字节</span><select id="mBudget"><option>700</option><option>1400</option><option>2100</option><option>2800</option></select></label>
           <p class="note">记忆和聊天保存在本机。开启长期记忆后，相关记忆可随聊天请求发送给已配置的 AI 服务。数据库备份包含聊天原文。</p>
           <p class="note" id="mStatus" role="status"></p>
-          <p class="note" id="mFeedback" role="status"></p>
           <div class="row2 wrap">
             <button type="button" class="mini" data-memory="refresh">重试 / 刷新</button>
             <button type="button" class="mini" data-memory="openFolder">打开文件夹</button>
@@ -302,6 +321,7 @@
             <button type="button" class="mini" id="aImport">导入提醒</button>
             <button type="button" class="mini" id="aExport">导出提醒</button>
           </div>
+          <p class="note action-status" id="mFeedback" role="status"></p>
           <p class="note" id="aFileFeedback" role="status"></p>
           <details>
             <summary>管理长期记忆</summary>
@@ -324,6 +344,7 @@
               <button type="button" class="mini hidden" id="mCancel">取消编辑</button>
               <button type="button" class="mini" data-memory="clearMemories">清除全部长期记忆</button>
             </div>
+            <p class="note action-status" id="mEditFeedback" role="status"></p>
           </details>
           <details>
             <summary>最近一次 AI 聊天使用的记忆</summary>

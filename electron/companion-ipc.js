@@ -7,7 +7,7 @@ const { randomUUID } = require('node:crypto');
 const { Agenda, calendar, nextOccurrence, parseReminder } = require('./agenda');
 const { Proactive, command, quiet } = require('./proactive');
 
-module.exports = function companion({ store, trustedWindow, activeWindow, settings }) {
+module.exports = function companion({ store, trustedWindow, activeWindow, settings, onSpoken = () => {} }) {
   const reminders = new Agenda(() => store.open());
   const proactive = new Proactive(() => store.open());
   const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -148,6 +148,7 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       if (delivery?.win !== win || delivery.id !== id || proactive.status(presence()).blocked) return false;
       delivery = null;
       proactive.spoken(Date.now());
+      onSpoken(win);
       return true;
     },
     poll(win, value) {
@@ -176,11 +177,17 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
   });
 
   return {
+    visionPolicy() {
+      const options = proactive.options();
+      return options.enabled && options.ai && options.vision ? options : null;
+    },
     useTicket(win, id) {
       if (!ticket || ticket.win !== win || ticket.id !== id || ticket.expires < Date.now() || proactive.status(presence()).blocked) return null;
       ticket = null;
       const options = proactive.options();
-      return options.enabled && options.ai ? { memory: options.memory } : null;
+      return options.enabled && options.ai ? { memory: options.memory, vision: options.vision,
+        stillAllowed: () => delivery?.id === id && delivery.win === win && Date.now() < delivery.expires &&
+          !proactive.status(presence()).blocked } : null;
     },
     pause() {
       const options = proactive.options();

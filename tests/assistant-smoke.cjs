@@ -151,7 +151,36 @@ async function run() {
   await until(() => proactiveBody);
   assert.doesNotMatch(JSON.stringify(proactiveBody), /永远不要发送的测试记忆/);
   await until(() => runJS("document.querySelector('#bubbleText').textContent.includes('生成的测试问候')"));
-  console.log('Electron passed reminder delivery and confirmation, proactive memory opt-out, vision confirmation, DPAPI, indicator and lock.');
+
+  await runJS(`petAPI.setSettings({baseUrl: ${JSON.stringify(base + '/chat')}, model:'synth-chat', kind:'openai'})`);
+  await ipc('companion', 'configure', { enabled: true, frequency: 'frequent', min: 10, limit: 8, quietFrom: '00:00', quietTo: '00:00',
+    ai: true, memory: true, voice: false, adaptive: false, vision: true, visionEvery: 2 });
+  failed = false;
+  const [proactiveSource] = await call('sources', 'screen');
+  preview = await call('preview', { id: proactiveSource.id, question: 'describe' });
+  const sentBefore = sent;
+  approved = false;
+  assert.equal(await call('observeProactive', { token: preview.token, duration: 30 }), null);
+  assert.equal((await call('state')).observation, null);
+  approved = true;
+  assert.equal(await call('observeProactive', { token: preview.token, duration: 30 }), true);
+  assert.equal(sent, sentBefore, 'authorization does not send the preview');
+  assert.equal((await call('state')).observation.mode, 'proactive');
+  const shotsBefore = shots;
+  for (const expected of [false, true]) {
+    proactiveBody = undefined;
+    now += 21 * 60000; // Advance the dialogue scheduler, leaving the explicit observation lease active.
+    clockOffset += 31000;
+    await until(() => proactiveBody);
+    assert.equal(JSON.stringify(proactiveBody).includes('合成画面的视觉描述'), expected);
+    await until(() => runJS('!CompanionUI.talking'));
+  }
+  assert.equal(shots, shotsBefore + 1);
+  assert.equal(sent, sentBefore + 1);
+  assert.equal((await call('state')).latest, '');
+  powerMonitor.emit('lock-screen');
+  assert.equal((await call('state')).observation, null);
+  console.log('Electron passed reminders, memory opt-out, visual consent and lock, and one proactive screenshot in two dialogues.');
 }
 
 run().then(() => app.quit(), error => { console.error(error); app.exit(1); }).finally(() => server.close());

@@ -11,9 +11,9 @@ const CompanionUI = {
   lastLine: '',
   call(op, value) { return window.petAPI.companion(op, value); },
   async task(status, fn) {
-    $(status).textContent = '';
+    Settings.feedback(status);
     try { await fn(); }
-    catch (e) { $(status).textContent = e.message.replace(/^Error invoking remote method '[^']+': Error: /, ''); }
+    catch (e) { Settings.feedback(status, e.message.replace(/^Error invoking remote method '[^']+': Error: /, ''), 'error'); }
   },
   showAgenda() {
     Settings.open();
@@ -79,16 +79,17 @@ const CompanionUI = {
     await this.call('save', { ...(this.id ? { id: this.id } : {}), title: $('#aTitle').value, content: $('#aContent').value,
       day, time: $('#aTime').value, timezone: $('#aZone').value, weekdays,
       voice: $('#aVoice').checked, notify: $('#aNotify').checked, enabled: this.editingEnabled });
-    this.edit(); await this.refresh(); $('#aFeedback').textContent = '已保存提醒';
+    this.edit(); await this.refresh(); Settings.feedback('#aFeedback', '已保存提醒', 'ok');
   },
   async loadOptions() {
     const p = await this.call('options');
-    for (const [key, value] of Object.entries({ Enabled: p.enabled, AI: p.ai, Memory: p.memory, Voice: p.voice, Adaptive: p.adaptive })) $('#p' + key).checked = value;
+    for (const [key, value] of Object.entries({ Enabled: p.enabled, AI: p.ai, Memory: p.memory, Voice: p.voice, Adaptive: p.adaptive, Vision: p.vision })) $('#p' + key).checked = value;
     for (const [key, value] of Object.entries({ Frequency: p.frequency, Min: p.min, QuietFrom: p.quietFrom, QuietTo: p.quietTo,
-      Limit: p.limit, Strength: p.strength, Manual: p.manual })) {
+      Limit: p.limit, Strength: p.strength, Manual: p.manual, VisionEvery: p.visionEvery })) {
       $('#p' + key).value = value;
     }
     $('#pFrequency').onchange();
+    this.visionControls();
     await this.refreshState();
   },
   async refreshState() {
@@ -102,7 +103,12 @@ const CompanionUI = {
       frequency: $('#pFrequency').value, min: +$('#pMin').value, limit: +$('#pLimit').value,
       quietFrom: $('#pQuietFrom').value, quietTo: $('#pQuietTo').value,
       adaptive: $('#pAdaptive').checked, strength: $('#pStrength').value, manual: $('#pManual').value,
+      vision: $('#pVision').checked, visionEvery: +$('#pVisionEvery').value,
     };
+  },
+  visionControls() {
+    $('#pVision').disabled = !$('#pEnabled').checked || !$('#pAI').checked;
+    $('#pVisionEvery').disabled = $('#pVision').disabled || !$('#pVision').checked;
   },
   async saveOptions(options) {
     await this.call('configure', options);
@@ -160,7 +166,7 @@ const CompanionUI = {
         try {
           const time = hour < 12 ? '上午' : hour < 18 ? '下午' : '晚上';
           const out = AI.parse(await AI.complete(AI.systemPrompt(aiState()) +
-            '\n这是主动打招呼。只说一句。主题限定为' + category + '，避免重复上一次主题。你没有屏幕信息，不推断用户的情绪、健康或正在做什么。',
+            '\n这是主动打招呼。只说一句，避免重复上次主题。若附有本次授权的屏幕描述，可以自然提及其中的公开主题；否则以' + category + '为主题。不要猜测用户的情绪、健康或屏幕内容。',
           [{ role: 'user', content: '请在' + time + '和我轻松打个招呼。' }],
           { timeout: 15000, maxTokens: 240, proactive: options.ticket }));
           const unsupported = /(?:我|刚)(?:刚才|刚刚)?(?:看见|看到|看着|注意到你正在)|你(?:一定|肯定|明显|看起来)(?:很|有点)?(?:累|难过|疲惫|生病|不舒服)/;
@@ -190,15 +196,16 @@ const CompanionUI = {
     $('#aCancel').onclick = () => this.edit();
     $('#aRefresh').onclick = () => this.task('#aFeedback', () => this.refresh());
     $('#aExport').onclick = () => this.task('#aFileFeedback', async () => {
-      if (await this.call('exportFile')) $('#aFileFeedback').textContent = '提醒已导出到 JSON';
+      if (await this.call('exportFile')) Settings.feedback('#aFileFeedback', '提醒已导出到 JSON', 'ok');
     });
     $('#aImport').onclick = () => this.task('#aFileFeedback', async () => {
       const count = await this.call('importFile');
       if (count === null) return;
-      $('#aFileFeedback').textContent = `已导入 ${count} 条提醒，导入项目为暂停状态`;
+      Settings.feedback('#aFileFeedback', `已导入 ${count} 条提醒，导入项目为暂停状态`, 'ok');
       await this.refresh();
     });
     $('#pFrequency').onchange = () => { $('#pMin').disabled = $('#pFrequency').value !== 'custom'; };
+    $('#pEnabled').onchange = $('#pAI').onchange = $('#pVision').onchange = () => this.visionControls();
     // Only keep the time of input in Chieri. No keys or text are inspected or persisted.
     for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => this.activity(), true);
     window.petAPI.onAgenda(() => this.showAgenda());

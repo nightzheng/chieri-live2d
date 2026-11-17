@@ -4,10 +4,10 @@ const { app, ipcMain, BrowserWindow, desktopCapturer, powerMonitor, dialog, nati
 const fs = require('node:fs');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-const { DEFAULTS, INTERVALS, MAX_IMAGE, VisionFlow, validateConfig, parseRequest } = require('./vision');
+const { DEFAULTS, INTERVALS, PROACTIVE_DURATIONS, MAX_IMAGE, VisionFlow, validateConfig, parseRequest } = require('./vision');
 const { writeAtomic } = require('./memory-store');
 
-module.exports = function registerVision(trustedWindow, activeWindow) {
+module.exports = function registerVision(trustedWindow, activeWindow, proactivePolicy, chatTarget) {
   const file = path.join(app.getPath('userData'), 'vision-settings.json');
   const supported = process.platform === 'win32';
   const windows = () => BrowserWindow.getAllWindows().filter(win => !win.isDestroyed());
@@ -85,7 +85,12 @@ module.exports = function registerVision(trustedWindow, activeWindow) {
       revoke('原授权窗口已关闭');
       owner = null;
     }
-    flow.tick(!!allowed()).catch(() => {});
+    try {
+      const session = flow.observation;
+      const current = session?.mode !== 'proactive' ||
+        (proactivePolicy()?.visionEvery === session.every && chatTarget() === session.chat);
+      flow.tick(!!allowed() && current).catch(() => {});
+    } catch (_) { revoke('无法读取主动互动设置，已停止观察'); }
   }, 1000);
   app.on('will-quit', () => { clearInterval(timer); revoke(''); });
 
@@ -167,6 +172,20 @@ module.exports = function registerVision(trustedWindow, activeWindow) {
     },
     send: (win, token) => send(win, token),
     observe: (win, value) => send(win, value?.token, { interval: value?.interval, duration: value?.duration }),
+    async observeProactive(win, value) {
+      check(win);
+      const { source } = flow.inspect(win, value?.token);
+      const policy = proactivePolicy(), chat = chatTarget(), selected = config;
+      if (!policy || !chat) throw new Error('请先保存主动闲聊、AI 台词和看屏幕选项');
+      if (!PROACTIVE_DURATIONS.includes(value.duration)) throw new Error('观察时长无效');
+      const approved = await confirm(win, '授权本次主动观察？',
+        `范围：${source.name}\n时长：${value.duration} 分钟\n每 ${policy.visionEvery} 次主动闲聊查看一次\n图片发送到：${config.base}\n简短描述发送到聊天服务：${chat}\n开启朗读时，回复可能由已选语音服务朗读。可以随时停止，请避开敏感内容。`);
+      if (!approved) return null;
+      check(win);
+      if (selected !== config || chatTarget() !== chat || proactivePolicy()?.visionEvery !== policy.visionEvery) throw new Error('设置已变更，请重新授权');
+      flow.beginProactive(win, value.token, config, { duration: value.duration, every: policy.visionEvery, chat });
+      return true;
+    },
     stop() { revoke('视觉会话已停止'); },
     clear() { inventory = null; flow.clear(); },
     async test(win, mode) {
@@ -191,5 +210,10 @@ module.exports = function registerVision(trustedWindow, activeWindow) {
       return { error: message };
     }
   });
-  return () => revoke('视觉会话已停止');
+  return {
+    stop: () => revoke('视觉会话已停止'),
+    markSpoken: win => flow.markSpoken(win),
+    sample: (win, endpoint, permitted) => flow.proactiveSample(win, endpoint,
+      () => !!allowed() && proactivePolicy()?.visionEvery === flow.observation?.every && chatTarget() === endpoint && permitted()),
+  };
 };

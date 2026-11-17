@@ -52,6 +52,30 @@ test('V04 observation ends on elapsed duration and does not capture when revoked
   assert.equal(service.status().observation, null);
 });
 
+test('proactive observation checks every nth actual dialogue and never runs on the timer alone', async () => {
+  let now = 0, shots = 0, sent = 0;
+  const service = new VisionFlow({ now: () => now, capture: async () => { shots++; return picture; },
+    request: async () => { sent++; return 'private fixture'; } });
+  const preview = await service.stage('w', source, '', config);
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  service.beginProactive('w', preview.token, config, { duration: 30, every: 2, chat: 'chat' });
+  assert.equal(shots, 1);
+  assert.equal(sent, 0);
+  now = 15 * minute;
+  await service.tick(true);
+  assert.equal(shots, 1);
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  service.markSpoken('w');
+  assert.equal(await service.proactiveSample('w', 'wrong endpoint', () => true), null);
+  assert.equal(await service.proactiveSample('w', 'chat', () => false), null);
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), 'private fixture');
+  assert.equal(service.status().latest, '');
+  service.markSpoken('w');
+  service.stop();
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  assert.equal(sent, 1);
+});
+
 test('stopping during capture or network quarantines late results', async () => {
   let captureFinish;
   const pending = new VisionFlow({ capture: () => new Promise(resolve => { captureFinish = resolve; }) });

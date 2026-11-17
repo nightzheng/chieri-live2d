@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 const MINUTE = 60000;
 const MAX_IMAGE = 1024 * 1024;
 const INTERVALS = [5, 10, 15, 30];
+const PROACTIVE_DURATIONS = [...INTERVALS, 60, 120, 240];
 const DEFAULTS = { enabled: false, provider: 'openai', base: 'https://api.openai.com/v1', model: '', size: 1024, quality: 70, timeout: 20000 };
 
 function validateConfig(value) {
@@ -81,6 +82,7 @@ class VisionFlow {
     this.observation = null;
     this.latest = '';
     this.error = '';
+    this.failure = false;
     this.lastRequest = -Infinity;
     this.generation = 0;
     this.busy = false;
@@ -88,16 +90,17 @@ class VisionFlow {
 
   status() {
     const session = this.observation;
-    return { latest: this.latest, error: this.error, busy: this.busy, hasPreview: !!this.preview, observation: session &&
-      { expires: session.expires, name: session.source.name, next: session.next } };
+    return { latest: this.latest, error: this.error, failure: this.failure, busy: this.busy, hasPreview: !!this.preview, observation: session &&
+      { expires: session.expires, name: session.source.name, next: session.next, mode: session.mode, every: session.every } };
   }
 
-  stop(reason = '') {
+  stop(reason = '', failure = false) {
     this.generation++;
     this.controller?.abort();
     this.preview = null;
     this.observation = null;
     this.error = reason;
+    this.failure = failure;
     this.notify(this.status());
   }
 
@@ -164,8 +167,42 @@ class VisionFlow {
       this.latest = result;
       return result;
     } catch (e) {
-      if (this.generation === epoch && this.observation) this.stop('观察因请求失败已停止');
+      if (this.generation === epoch && this.observation) this.stop('观察因请求失败已停止', true);
       throw e;
+    } finally { this.busy = false; this.notify(this.status()); }
+  }
+
+  beginProactive(owner, token, config, { duration, every, chat }) {
+    this.inspect(owner, token);
+    if (this.busy || !PROACTIVE_DURATIONS.includes(duration)) throw new Error('观察时长无效或正在处理另一项操作');
+    const { source } = this.preview;
+    this.preview = null;
+    this.error = '';
+    this.observation = { owner, source, config, chat, every, spoken: 0, mode: 'proactive', expires: this.now() + duration * MINUTE };
+    this.notify(this.status());
+  }
+
+  markSpoken(owner) {
+    const session = this.observation;
+    if (session?.mode === 'proactive' && session.owner === owner && this.now() < session.expires) session.spoken++;
+  }
+
+  async proactiveSample(owner, chat, permitted) {
+    const session = this.observation;
+    const valid = () => this.observation === session && this.now() < session.expires && permitted();
+    if (session?.mode !== 'proactive' || session.owner !== owner || session.chat !== chat || this.busy ||
+        (session.spoken + 1) % session.every !== 0 || !valid() || this.now() - this.lastRequest < 30000) return null;
+    this.busy = true;
+    this.notify(this.status());
+    try {
+      const jpeg = await this.capture(session.source, session.config);
+      if (!valid()) return null;
+      const text = await this.run({ ...session.config, timeout: Math.min(session.config.timeout, 8000) }, jpeg,
+        '用一句话概括画面里的公开活动或主题，略去姓名、消息原文、凭据及其他私人信息。不确定就直说。', session.expires);
+      return valid() ? text.slice(0, 400) : null;
+    } catch (_) {
+      if (this.observation === session) this.stop('主动观察因截图或请求失败已停止', true);
+      return null;
     } finally { this.busy = false; this.notify(this.status()); }
   }
 
@@ -183,6 +220,7 @@ class VisionFlow {
     const session = this.observation;
     if (!session) return;
     if (!allowed || now >= session.expires) return this.stop(allowed ? '观察已到期' : '观察已暂停，请重新授权');
+    if (session.mode === 'proactive') return;
     if (this.busy || now < session.next) return;
     session.next = now + session.interval;
     this.busy = true;
@@ -192,9 +230,9 @@ class VisionFlow {
       if (this.observation !== session || this.now() >= session.expires) return;
       this.latest = await this.run(session.config, image, session.question, session.expires);
     } catch (_) {
-      if (this.observation === session) this.stop('观察因截图或请求失败已停止');
+      if (this.observation === session) this.stop('观察因截图或请求失败已停止', true);
     } finally { this.busy = false; this.notify(this.status()); }
   }
 }
 
-module.exports = { DEFAULTS, INTERVALS, MAX_IMAGE, VisionFlow, validateConfig, visionRequest, parseRequest };
+module.exports = { DEFAULTS, INTERVALS, PROACTIVE_DURATIONS, MAX_IMAGE, VisionFlow, validateConfig, visionRequest, parseRequest };

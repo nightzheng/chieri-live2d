@@ -4,12 +4,14 @@ const { calendar, validTime } = require('./agenda');
 
 const MINUTE = 60000;
 const LIMITS = { occasional: [45, 90], medium: [20, 40], frequent: [10, 20] };
+const VISION_INTERVALS = [1, 2, 3, 5, 10];
 const DEFAULTS = { enabled: false, frequency: 'occasional', min: 30, quietFrom: '23:00', quietTo: '08:00',
-  limit: 4, ai: false, memory: false, voice: false, adaptive: true, strength: 'medium', manual: 'normal' };
+  limit: 4, ai: false, memory: false, voice: false, adaptive: true, strength: 'medium', manual: 'normal', vision: false, visionEvery: 3 };
 
 function validOptions(options) {
   options = { ...DEFAULTS, ...options };
-  if (!options || !['enabled', 'ai', 'memory', 'voice'].every(k => typeof options[k] === 'boolean') ||
+  if (!options || !['enabled', 'ai', 'memory', 'voice', 'vision'].every(k => typeof options[k] === 'boolean') ||
+    !VISION_INTERVALS.includes(options.visionEvery) ||
     ![...Object.keys(LIMITS), 'custom'].includes(options.frequency) || !validTime(options.quietFrom) || !validTime(options.quietTo) ||
     !Number.isInteger(options.min) || options.min < 10 || options.min > 1440 ||
     !Number.isInteger(options.limit) || options.limit < 1 || options.limit > 24 ||
@@ -141,4 +143,4 @@ class Proactive {
   }
 }
 
-module.exports = { Proactive, quiet, delay, command };
+module.exports = { Proactive, quiet, delay, command, VISION_INTERVALS };

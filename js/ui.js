@@ -211,6 +211,12 @@ const Settings = {
     button.textContent = visible ? '隐藏' : '显示';
     button.setAttribute('aria-pressed', String(visible));
   },
+  feedback(selector, message = '', tone = '') {
+    const node = $(selector);
+    node.classList.add('action-status');
+    node.dataset.tone = tone;
+    node.textContent = message ? (tone === 'ok' ? '成功 · ' : tone === 'error' ? '异常 · ' : '') + message : '';
+  },
   value(key) {
     if (key === 'regular') return this.read();
     if (key === 'startup') return $('#sAutoStart').checked;

@@ -6,14 +6,14 @@ const MemoryUI = {
   before: undefined,
   running: false,
   request(operation, value) { return window.petAPI.memory(operation, value); },
-  async run(task) {
+  async run(task, selector = '#mFeedback') {
     if (this.running) return;
     this.running = true;
     $('#mEnabled').disabled = true;
     $('#mAuto').disabled = true;
-    $('#mFeedback').textContent = '';
+    Settings.feedback(selector);
     try { await task(); }
-    catch (error) { $('#mFeedback').textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, ''); }
+    catch (error) { Settings.feedback(selector, error.message.replace(/^Error invoking remote method '[^']+': Error: /, ''), 'error'); }
     finally {
       this.running = false;
       $('#mEnabled').disabled = false;
@@ -157,8 +157,8 @@ const MemoryUI = {
         importance: +$('#mImportance').value, expires_at: $('#mExpiry').value ? Date.parse($('#mExpiry').value) : null });
       this.edit(); this.offset = 0; $('#mFilter').value = 'active'; $('#mTypeFilter').value = '';
       await this.refresh();
-      $('#mFeedback').textContent = '记忆已保存';
-    });
+      Settings.feedback('#mEditFeedback', '记忆已保存', 'ok');
+    }, '#mEditFeedback');
     $('#mChatSearch').onclick = () => this.run(() => this.history());
     $('#mChatMore').onclick = () => this.run(() => this.history(true));
     $('#mClearChat').onclick = () => this.run(async () => { await Chat.clear(); await this.history(); });
@@ -172,11 +172,11 @@ const MemoryUI = {
         const result = action === 'refresh' ? true : await this.request(action);
         if (reloads && result) await Chat.reload();
         await this.refresh();
-        if (result && action === 'backup') $('#mFeedback').textContent = '已备份到 ' + result;
-        if (result && action === 'exportFile') $('#mFeedback').textContent = '已导出到 ' + result;
-        if (typeof result === 'number') $('#mFeedback').textContent = '已处理 ' + result + ' 条记忆';
-        if (action === 'clearMemories') $('#mFeedback').textContent = '已清除长期记忆';
+        if (result && action === 'backup') Settings.feedback('#mFeedback', '已备份到 ' + result, 'ok');
+        if (result && action === 'exportFile') Settings.feedback('#mFeedback', '已导出到 ' + result, 'ok');
+        if (typeof result === 'number') Settings.feedback('#mFeedback', '已处理 ' + result + ' 条记忆', 'ok');
+        if (action === 'clearMemories') Settings.feedback('#mEditFeedback', '已清除长期记忆', 'ok');
       } finally { if (reloads) Chat.sending = false; }
-    }));
+    }, btn.dataset.memory === 'clearMemories' ? '#mEditFeedback' : '#mFeedback'));
   },
 };

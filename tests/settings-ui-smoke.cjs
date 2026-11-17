@@ -108,6 +108,9 @@ async function run() {
   await until(() => js("document.querySelector('#visKey').type === 'text'"));
   assert.equal(await js("document.querySelector('#visKey').value"), 'test-vision-key');
   assert.equal(await js("Settings.changed('vision')"), false);
+  await js("document.querySelector('#visModel').value = 'unsaved'; document.querySelector('#visConnection').click(); true");
+  await until(() => js("document.querySelector('#visTestFeedback').dataset.tone === 'error'"));
+  assert.equal(await js("document.querySelector('#visTestFeedback').previousElementSibling.contains(document.querySelector('#visConnection'))"), true);
   await js("document.querySelector('#sAmbient').value = '0'; window.confirm = () => true; Settings.close(); true");
   assert.equal(await js("petAPI.getSettings().then(s => s.ambientMinutes)"), 15);
   const ambient = await js(`(async () => {
