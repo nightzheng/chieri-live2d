@@ -138,6 +138,27 @@ async function run() {
     return {early, due, inRange, repeated, disabled, waited, pairedAudio};
   })()`);
   assert.deepEqual(ambient, { early: true, due: true, inRange: true, repeated: false, disabled: true, waited: true, pairedAudio: true });
+  const ambientRounds = await js(`(async () => {
+    Store.data.ambientMinutes = ambientFrequency = 5;
+    remainingIdleMoments = new Set(IDLE_MOMENTS);
+    lastIdleMoment = undefined;
+    const played = [];
+    for (let i = 0; i < IDLE_MOMENTS.length * 2; i++) {
+      S.anim = null;
+      bubble.classList.add('hidden');
+      ambientNext = S.t;
+      await ambientMoment();
+      played.push(S.anim?.name);
+    }
+    Store.data.ambientMinutes = 0;
+    S.anim = null;
+    bubble.classList.add('hidden');
+    return played;
+  })()`);
+  assert.ok(ambientRounds.every(Boolean));
+  assert.equal(new Set(ambientRounds.slice(0, 6)).size, 6);
+  assert.equal(new Set(ambientRounds.slice(6)).size, 6);
+  assert.notEqual(ambientRounds[5], ambientRounds[6]);
   await js("window.confirm = () => { throw new Error('保存记忆不应弹确认'); }; MemoryUI.remember('我喜欢骑自行车')");
   assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 1);
   assert.equal(await js("document.querySelector('#aZone').tagName"), 'SELECT');

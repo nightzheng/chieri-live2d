@@ -697,7 +697,8 @@ async function ambientMoment() {
   try {
     if (!await allowed() || !available()) return;
     ambientNext = S.t + 30;
-    const [text, face, animation] = idleMoment();
+    const moment = idleMoment();
+    const [text, face, animation] = moment;
     const opt = { kind: 'ambient' };
     const buffer = await Voice.prepareAnimation(text, opt);
     if (!available() || S.lastInput !== userInput || !await allowed() || !available() || S.lastInput !== userInput) return;
@@ -705,6 +706,8 @@ async function ambientMoment() {
     startAnim(animation);
     S.anim.ambient = true;
     say(text, face, 2.5, { ...opt, buffer, voice: !!buffer });
+    remainingIdleMoments.delete(moment);
+    lastIdleMoment = moment;
   } finally { ambientPending = false; }
 }
 // "…" while she thinks of an answer
@@ -933,15 +936,19 @@ function animFrame(t) {
   if (u > A.dur) { S.anim = null; return null; }
   return A.f(u);
 }
+const IDLE_MOMENTS = [
+  ['嗯？', 'curious', 'lookAround'],
+  ['哼～哼哼♪', 'enjoy', 'hum'],
+  ['呼啊～…', 'gentle', 'stretch'],
+  ['唔……耳朵有点痒。', 'curious', 'earFlick'],
+  ['尾巴怎么又动啦……', 'gentle', 'tailPlay'],
+  ['嗯嗯～♪', 'happy', 'bounce'],
+];
+let lastIdleMoment;
+let remainingIdleMoments = new Set(IDLE_MOMENTS);
 function idleMoment() {
-  return pick([
-    ['嗯？', 'curious', 'lookAround'],
-    ['哼～哼哼♪', 'enjoy', 'hum'],
-    ['呼啊～…', 'gentle', 'stretch'],
-    ['唔……耳朵有点痒。', 'curious', 'earFlick'],
-    ['尾巴怎么又动啦……', 'gentle', 'tailPlay'],
-    ['嗯嗯～♪', 'happy', 'bounce'],
-  ]);
+  if (!remainingIdleMoments.size) remainingIdleMoments = new Set(IDLE_MOMENTS);
+  return pick([...remainingIdleMoments].filter(moment => moment !== lastIdleMoment));
 }
 
 // ---------------------------------------------------------------- carrying her around
