@@ -2,6 +2,14 @@
 
 const ENGLISH = Object.fromEntries(`
 千绘莉|Chieri
+你的称呼|What should Chieri call you?
+可选，例如小林|Optional, e.g. Alex
+你的生日|Your birthday
+生日月份|Birth month
+生日日期|Day of birth
+称呼和生日都可留空。生日只填月和日，用于当天问候。|Both fields are optional. Enter only the month and day for a birthday greeting.
+请选择生日日期，或清空月份。|Choose a day for your birthday or clear the month.
+生日快乐！今天也要过得开心呀。|Happy birthday! I hope you have a lovely day.
 取消安装|Cancel installation
 重新安装环境|Reinstall environment
 继续安装|Resume installation

@@ -35,7 +35,7 @@ The same page is also packaged with Electron as a Windows desktop pet (tray icon
 - **Desktop version (recommended)**: there are two installers. Both add a "千绘莉" shortcut to the Start menu and the desktop. They are built with `npm run dist` / `npm run dist:lite` (see "Packaging") and are not in the repository.
   - `dist/千绘莉-完整版-Setup-<version>.exe` (full edition, about 1.2 GB): includes Chieri's own GPT-SoVITS voice model, so it can speak with the local voice or with online voices.
   - `dist/千绘莉-在线版-Setup-<version>.exe` (online edition, about 145 MB): no model, smaller, online voice services only.
-  - You can install a new version over an old one without uninstalling first. The installer first stops any local voice process still running, so that old model files are not held open and can be replaced.
+  - To upgrade, select the existing Chieri folder, including a custom location or an installation with missing registration. Choose an empty folder for a fresh location. Normal upgrades and uninstalls keep user settings and the database. When first upgrading from an older version, exit Chieri from the tray. The old uninstaller may still run the legacy Python process scan.
 
 ## Desktop pet
 
@@ -74,6 +74,7 @@ Once it is set up:
 - **Chat window** (💬): chat with Chieri. The model answers in character and also picks her expression (happy, shy, sulking…), an action (jump, swish her tail, twitch her ears, hearts…) and how her affection changes, and she acts it out on the spot.
 - **AI touch reactions**: when on, patting her head, pulling her ears, poking her cheek and the like are described to the model, which writes her reaction instead of a fixed line. Her body still reacts immediately; until the reply arrives the bubble shows "…". When you touch her many times in quick succession she falls back to fixed lines.
 - **Persona**: the default persona is the character sheet in `rg.txt` (a Russian Blue cat-girl café clerk, a tsundere who acts like your senior and does not say "nya"). Her name and persona can be changed in the settings. A default persona saved by an older version is replaced with the new one automatically; a persona you edited yourself is never overwritten.
+- **Your name and birthday**: in **Character**, optionally set what Chieri should call you and enter your birthday as a month and day. Chieri uses the name in her opening line and AI chat, and gives a birthday greeting on the date you selected. February 29 matches on leap years. The exact date stays in local settings. The configured chat provider can receive your preferred name and whether today is your birthday.
 - Her replies may include stage directions in （） such as "（猫耳抖了抖）" (her cat ears twitch). They are shown in the bubble and skipped when read aloud.
 - **Hide chat log** ("隐藏聊天栏"): when ticked, chatting leaves only an input box with no history, and her replies appear only in the bubble above her head. Press Esc or the × left of the input box to close it.
 
@@ -82,6 +83,7 @@ Where data is kept:
 - The desktop version stores API keys encrypted by the system (Windows DPAPI) in your user folder. Requests go from the app's main process straight to the address you entered, so there are no CORS problems.
 - The web version keeps them in the browser's localStorage. Some providers block cross-origin requests from browsers.
 - Without AI configured, the chat window answers with a few keyword replies and interactions use fixed lines.
+- Settings highlight the current section as you scroll. Select **Save all** to apply edits. Closing with unsaved edits prompts you first.
 
 ## Voice
 
@@ -122,6 +124,35 @@ Uninstalling does not delete `%LOCALAPPDATA%\chieri-tts` (about 5 GB). Delete th
 
 API keys for online voice services are encrypted by the system, like the AI key. The web version can only use online engines, and the provider's cross-origin policy may block it.
 
+## Switching languages
+
+Use **English / 中文** at the top of Settings to switch the interface, new chat replies, preset interaction lines, startup greetings, ambient phrases, and proactive chat. Desktop windows share the preference. The web app remembers its own choice. Existing chats, reminder titles, and stored memories keep their original text. Japanese voice engines still speak Japanese. For example, say “Remember that I like coffee” or “Remind me tomorrow at 09:00 to call home.”
+
+## Memory and data (Windows desktop)
+
+Open **Memory and data** in Settings. Local rules are enabled by default and save qualifying memories directly. Say “千绘莉，记住我喜欢喝冰美式” (“Chieri, remember that I like iced Americanos”) to save it explicitly. “更正：我不喜欢喝冰美式” (“Correction: I dislike iced Americanos”) archives the earlier preference. Local rules work without an AI provider. Existing mode preferences are preserved.
+
+- Settings, encrypted keys, and the memory location stay in **%APPDATA%\千绘莉\**. The default database is **%LOCALAPPDATA%\千绘莉\memory\memory.sqlite**. Database backups go in **backups** next to the active library.
+- Migrating to a new location verifies a snapshot before switching paths and keeps the originals. If a drive becomes unavailable or a database is damaged, relink an existing library or restore a backup. Restore retains the files that were present at the destination. Once you have checked the active location and backup, you can manage old copies in File Explorer.
+- The desktop app imports existing chats in their original order. Legacy messages without timestamps show an estimated import time. **Open memory and chat management** shows 12 memories per page. Search or filter by type and archive status, and edit importance or expiration. Chat history is paged by turn, with search and deletion. Desktop history has no age-based cleanup. The web app uses browser storage.
+- Long-term memory is saved locally. When enabled, relevant entries may accompany your request to the configured model provider. You can inspect the entries included in the latest AI chat or turn off long-term memory. Recent chat still forms the current conversation context. Memory and SQLite backups have no application-level encryption.
+- JSON exports contain active memories only. SQLite backups also contain original chat messages and archived memories. Keep them private and copy essential backups to a separate drive. Windows DPAPI keys may fail to decrypt on a different device or account, so you may need to re-enter your API key.
+- In **记忆与数据** (Memory and data), choose no automatic extraction, local rules, or optional AI-assisted extraction. AI assistance retains local rules and considers older messages when they fall outside the 16-message or 6,000-character chat context. It sends up to three screened user messages to the chat provider, at most once per ten minutes and six times per 24 hours. Validated memories are saved automatically. Retrieval of existing memories remains based on relevance to the current message.
+- Before migrating to SQLite schema 3, Chieri saves a verified snapshot in the active database's `backups` directory. Use the pre-upgrade snapshot when rolling back to an earlier build. The current build is labeled **1.2.8**. Database compatibility follows the schema version.
+- Local memory rules cover preferences, habits or skills, long-term goals, important experiences, and residence or occupation. Enable categories individually. Adjust the number and size of memories sent to the model, and inspect recently included entries and matching terms.
+
+## Reminders, proactive chat, and screen vision
+
+- **Wellness reminders** can be enabled individually. Hydration and stand-up reminders count active computer time at 30, 45, 60, 90, or 120 minute intervals. Reminders due together are combined. Late-night reminders default to 23:30 local time, appear at most once per night while you are active, and expire at 06:00. Voice and system notifications can be enabled separately.
+- **Device time**: ask “What time is it?” for the current device time. Chat, proactive greetings, and the opening line when entering desktop-pet mode use the device’s time of day.
+- **Reminders & schedule** supports one-off, daily, weekly, weekday, or custom weekly reminders. The device time zone is the default, and you can pick another from the list. Say “Remind me tomorrow at 09:00 to call home” and confirm the schedule. Voice and notifications have separate switches. The local Chieri voice can use a fixed Japanese reminder without a chat API. After sleep or restart, missed reminders can be replayed, snoozed, or completed.
+- **Proactive chat** is off by default. Base intervals are 10–20, 20–40, or 45–90 minutes, with a custom minimum available. Set quiet hours, a daily limit, adaptive strength, AI dialogue, memory use, and voice. Pause proactive chat from the tray. User interactions, scheduled reminders, and existing audio take priority.
+- To include screen context in occasional proactive conversations, turn on AI dialogue and screen viewing in **Proactive chat**, choose how many conversations between captures, and select **Save all**. Configure the vision API, then choose an automatically listed display or window under **Screen sources and privacy**, preview it, and confirm once. Authorization is remembered and can be revoked. Capture pauses on lock and can resume after unlock. Changing the source or service requires fresh authorization. Editable privacy keywords block capture when a window title matches, and block forwarding when the vision description matches. Text visible only in the image may already have reached the vision provider.
+- **Screen vision** is off by default and uses a separate model and key. Select a display or window and preview it locally before confirming a single capture or a timed session of up to 30 minutes. Locking, sleeping, hiding the app window, or expiration stops timed capture. Images are held in memory. Ask for a character response, read the description aloud, clear it, or click to save it to long-term memory. The tray can also stop viewing.
+- Scheduled reminders, wellness reminders, and proactive preferences follow SQLite backups, restores, and migrations. Reminder JSON export is separate, and imported reminders start paused. Vision settings are stored separately, with the key encrypted using Windows secure storage.
+- **主动互动** (Proactive chat) shows the current companionship state, its reason, and the last proactive message time. Adaptive mode extends intervals when several prompts go unanswered. Say “现在别打扰我” (please leave me alone now), “接下来一小时我要专心工作” (I need to focus for the next hour), or “可以陪我聊聊天” (you can chat with me now). Chat commands that change your ongoing frequency require confirmation. Scheduled reminders continue to run.
+- **Ambient actions and phrases** can be turned off or set to roughly every 1–2, 5–10, 15–30, or 30–60 minutes. The default is 5–10 minutes. Animations and phrases start together. Six pairs play in random order without adjacent repeats during a session. Quiet hours, sleep, or activity can delay them.
+
 ## Recording mode
 
 For filming promo videos. Press F8, or turn it on in the "显示" (Display) panel; in the desktop version also from the right-click or tray menu. While it is on:
@@ -150,6 +181,8 @@ Shortcuts (also listed in the shortcut panel on the left; H hides it):
 Press the keys while the window is in front; typing in an input box does not trigger them. In recording mode the desktop version also accepts Ctrl+Alt+the same key, so they work while OBS or another window is in front. These key combinations are taken only while recording mode is on and are given back when it is turned off.
 
 ## Packaging
+
+Run `npm test` with Node.js 24. Build the online edition with `npm run dist:lite`. For `npm run dist`, first copy the `resources\voice\Chieri_GPTSoVITS_20261103` model directory from an existing full installation into the project's `voice\` directory. If dependency installation left the Electron runtime undownloaded, run `node node_modules/electron/install.js`.
 
 ```bash
 npm run dist
@@ -212,38 +245,3 @@ In the main window she stands in a café. The top of the "显示" (Display) pane
 - Configuration is in `js/config.js` (body part coordinates, expression mapping, lines), the Japanese versions of the lines in `js/lines_ja.js`, deformation in `js/rig.js`, rendering and interaction in `js/app.js`, voice in `js/voice.js`, the AI client and settings storage in `js/ai.js`, and the chat window, settings panel and desktop pet behavior in `js/ui.js`. The local voice server is `voice/chieri_server.py`.
 
 Note: this is a Live2D-style rig implemented in a web page, not a `.moc3` model exported from Cubism Editor.
-
-## Memory and data (Windows desktop)
-
-Use **English / 中文** at the top of Settings to switch the interface, new chat replies, preset interaction lines, startup greetings, ambient phrases, and proactive chat. Desktop windows share the preference. The web app remembers its own choice. Existing chats, reminder titles, and stored memories keep their original text. Japanese voice engines still speak Japanese. For example, say “Remember that I like coffee” or “Remind me tomorrow at 09:00 to call home.”
-
-Open **Memory and data** in Settings. Local rules are enabled by default and save qualifying memories directly. Say “千绘莉，记住我喜欢喝冰美式” (“Chieri, remember that I like iced Americanos”) to save it explicitly. “更正：我不喜欢喝冰美式” (“Correction: I dislike iced Americanos”) archives the earlier preference. Local rules work without an AI provider. Existing mode preferences are preserved.
-
-- Settings, encrypted keys, and the memory location stay in **%APPDATA%\千绘莉\**. The default database is **%LOCALAPPDATA%\千绘莉\memory\memory.sqlite**. Database backups go in **backups** next to the active library. Select the existing application folder to install over it, even if its installation registration is missing. Use an empty folder for a fresh location. Ordinary upgrades and uninstallations keep user data by default.
-- Migrating to a new location verifies a snapshot before switching paths and keeps the originals. If a drive becomes unavailable or a database is damaged, relink an existing library or restore a backup. Restore retains the files that were present at the destination. Once you have checked the active location and backup, you can manage old copies in File Explorer.
-- The desktop app imports existing chats on first launch in their original order. Legacy messages have no timestamps, so the UI shows estimated import times. Settings provide paged history, search, and deletion of individual turns. Clearing chat and clearing long-term memory require separate confirmations. The web app continues to use browser storage.
-- Long-term memory is saved locally. When enabled, relevant entries may accompany your request to the configured model provider. You can inspect the entries included in the latest AI chat or turn off long-term memory. Recent chat still forms the current conversation context. Memory and SQLite backups have no application-level encryption.
-- JSON exports contain active memories only. SQLite backups also contain original chat messages and archived memories. Keep them private and copy essential backups to a separate drive. Windows DPAPI keys may fail to decrypt on a different device or account, so you may need to re-enter your API key.
-- On the first upgrade from an older release, NSIS may run the already installed uninstaller, which contains the legacy PowerShell scan for Python processes. Exit Chieri from the tray before upgrading. If other Python jobs must stay running, wait for them to finish before upgrading.
-
-## Reminders, proactive chat, and screen vision
-
-- Enable hydration, stand-up, or late-night reminders under **Reminders & schedule → Wellness reminders**. Hydration and stand-up reminders count active computer time. The late-night reminder defaults to 23:30 local time and appears at most once per night while the computer is active. Ask “What time is it?” for your device time. Chat, proactive greetings, and the opening line when entering desktop-pet mode use the device’s time of day.
-
-- In **提醒与日程** (Reminders and schedule), create one-off, daily, weekly, weekday, or custom weekly reminders. You can also say “明天十点提醒我开会” (“Remind me to attend the meeting tomorrow at ten”) and confirm the proposed schedule. Notifications and voice have separate switches. The configured local Chieri voice can use a fixed Japanese reminder line without a chat API. Missed reminders appear on return from sleep or after restarting, with replay, snooze, and completion controls.
-- **主动互动** (Proactive chat) is off by default. Set randomized intervals, quiet hours, a daily limit, and separate options for AI, long-term memory, and voice. Pause proactive chat from the tray while keeping reminders running. User interactions, scheduled reminders, and existing audio take priority.
-- To include screen context in occasional proactive conversations, turn on AI dialogue and screen viewing in **Proactive chat**, choose how many conversations between captures, and select **Save all**. Configure the vision API, then choose an automatically listed display or window under **Screen sources and privacy**, preview it, and confirm once. Authorization is remembered and can be revoked. Capture pauses on lock and can resume after unlock. Changing the source or service requires fresh authorization. Editable privacy keywords block capture when a window title matches, and block forwarding when the vision description matches. Text visible only in the image may already have reached the vision provider.
-- **视觉感知** (Screen vision) is off by default and uses a separate model and key. Select a display or window, check the local preview, and confirm before sending. You can start an observation of up to 30 minutes. It stops when Windows locks or sleeps, the app window is hidden, or the session expires. Images are handled in memory. Sending analysis text to your chat model, reading it aloud, and saving it as memory each require separate confirmation. The tray can stop observation and Settings can clear recent vision results.
-- Reminders and proactive preferences follow SQLite backups, restores, and migrations. Reminder JSON export is separate and imported reminders start paused. Vision settings live at `%APPDATA%\千绘莉\vision-settings.json`, with the key encrypted using Windows secure storage.
-
-## Memory quality and companionship settings
-
-- In **记忆与数据** (Memory and data), choose no automatic extraction, local rules, or optional AI-assisted extraction. AI assistance retains local rules and considers older messages when they fall outside the 16-message or 6,000-character chat context. It sends up to three screened user messages to the chat provider, at most once per ten minutes and six times per 24 hours. Validated memories are saved automatically. Retrieval of existing memories remains based on relevance to the current message.
-- **主动互动** (Proactive chat) shows the current companionship state, its reason, and the last proactive message time. Adaptive mode extends intervals when several prompts go unanswered. Say “现在别打扰我” (please leave me alone now), “接下来一小时我要专心工作” (I need to focus for the next hour), or “可以陪我聊聊天” (you can chat with me now). Chat commands that change your ongoing frequency require confirmation. Scheduled reminders continue to run.
-- Before migrating to SQLite schema 3, Chieri saves a verified snapshot in the active database's `backups` directory. Use the pre-upgrade snapshot when rolling back to an earlier build. The current build is labeled **1.2.8**. Database compatibility follows the schema version.
-- Use **保存全部** (Save all) for settings changes. Closing the settings panel prompts if you have pending changes. Under **Proactive interaction**, choose Off or roughly every 1–2, 5–10, 15–30, or 30–60 minutes for ambient actions and voice. The default is 5–10 minutes. Animations and their sounds start together, with delays during quiet or busy periods.
-- Local memory rules can be enabled by category. **Open memory and chat management** shows paged, searchable cards for saved memories and complete conversation turns. Desktop history has no age-based cleanup. AI context includes up to 16 recent messages, within a size budget. Reminder time zones are selected from a dropdown.
-
-### Development and packaging
-
-Run `npm test` with Node.js 24. Build the online edition with `npm run dist:lite`. For `npm run dist`, first copy the `resources\voice\Chieri_GPTSoVITS_20261103` model directory from an existing full installation into the project's `voice\` directory. If dependency installation left the Electron runtime undownloaded, run `node node_modules/electron/install.js`.

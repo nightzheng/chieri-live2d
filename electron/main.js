@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const ENGLISH = require('../js/i18n-en');
+const UserProfile = require('../js/user-profile');
 
 const ROOT = path.join(__dirname, '..');
 const ICON = path.join(ROOT, 'build', 'icon.png');
@@ -218,6 +219,8 @@ ipcMain.handle('settings:locale', (event, locale) => {
 });
 ipcMain.handle('settings:set', (_, s) => {
   const keep = settings.pet; settings = { ...settings, ...s, pet: { ...keep, ...(s.pet || {}) } };
+  settings.userName = UserProfile.name(settings.userName);
+  settings.birthday = UserProfile.birthday(settings.birthday);
   saveSettings(); applyPet(); recShortcuts(); tray && tray.setToolTip(displayName()); return true;
 });
 // AI calls go out from here: no CORS in the way, and the key never leaves this machine except to the endpoint

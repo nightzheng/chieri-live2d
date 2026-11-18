@@ -100,6 +100,10 @@ async function run() {
   await js("window.confirm = () => false; Settings.close(); true");
   assert.equal(await js("document.querySelector('#settings').classList.contains('hidden')"), false);
   await js(`document.querySelector('#sAmbient').value = '15';
+    document.querySelector('#sUserName').value = '小林';
+    document.querySelector('#sBirthMonth').value = '02';
+    Settings.profileDates();
+    document.querySelector('#sBirthDay').value = '29';
     document.querySelector('#pLimit').value = '7';
     document.querySelector('#wWater').value = '45';
     document.querySelector('#wStand').value = '60';
@@ -110,6 +114,7 @@ async function run() {
   assert.equal(await js("petAPI.companion('options').then(s => s.limit)"), 7);
   assert.deepEqual(await js("petAPI.companion('wellnessOptions').then(({water, stand}) => [water, stand])"), [45, 60]);
   assert.equal(await js("petAPI.getSettings().then(s => s.ambientMinutes)"), 15);
+  assert.deepEqual(await js("petAPI.getSettings().then(s => [s.userName, s.birthday])"), ['小林', '02-29']);
   await js('Settings.open(); true');
   await until(() => js('!Settings.loading'));
   await js("document.querySelector('#visKeyShow').click(); true");
@@ -168,9 +173,10 @@ async function run() {
   assert.deepEqual(await js("[5, 11, 14, 18, 23].map(hour => localClock(new Date(2026, 10, 18, hour)).period)"),
     ['早上', '中午', '下午', '晚上', '深夜']);
   const openings = await js(`(() => {
-    const clock = localClock, speak = say, recording = Rec.on, lines = [];
+    const clock = localClock, speak = say, recording = Rec.on, profile = Store.data, lines = [];
     say = (text, _, __, {ja}) => lines.push([text, ja]);
     try {
+      Store.data = {...profile, userName:'', birthday:''};
       Rec.on = false;
       for (const hour of [8, 12, 15, 20, 23]) {
         localClock = () => clock(new Date(2026, 10, 18, hour));
@@ -179,7 +185,7 @@ async function run() {
       Rec.on = true;
       greetOnStart();
       return lines;
-    } finally { localClock = clock; say = speak; Rec.on = recording; }
+    } finally { localClock = clock; say = speak; Rec.on = recording; Store.data = profile; }
   })()`);
   assert.deepEqual(openings.map(([line]) => line.slice(0, 2)), ['早上', '中午', '下午', '晚上', '夜深', '欢迎']);
   assert.ok(openings.every(([, ja]) => ja));
@@ -215,6 +221,21 @@ async function run() {
   await js("Chat.send('hello')");
   assert.match(await js("document.querySelector('#msgs').textContent"), /Hello! I was just about to say hi/);
   assert.match(await js("AI.systemPrompt({aff: 0, ang: 0})"), /natural English/);
+  const birthdayGreeting = await js(`(() => {
+    const speak = say, profile = Store.data;
+    const now = new Date(), birthday = [now.getMonth() + 1, now.getDate()].map(n => String(n).padStart(2, '0')).join('-');
+    let line;
+    say = (text, _, __, {ja}) => { line = [text, ja]; };
+    try {
+      Store.data = {...profile, userName:'Alex', birthday};
+      greetOnStart();
+      const prompt = AI.systemPrompt({aff:0, ang:0});
+      return {line, nickname: prompt.includes('"Alex"'), birthday: prompt.includes('今天是对方的生日')};
+    } finally { say = speak; Store.data = profile; }
+  })()`);
+  assert.match(birthdayGreeting.line[0], /^Alex, Happy birthday!/);
+  assert.match(birthdayGreeting.line[1], /誕生日/);
+  assert.equal(birthdayGreeting.nickname && birthdayGreeting.birthday, true);
   assert.equal(await js("I18n.fixed('耳朵痒痒的…')"), 'My ears tickle…');
   assert.equal(await data("document.querySelector('#mType option').value"), '事实');
   assert.match(await data("document.querySelector('#mHistory article').textContent"), /原始问句/);

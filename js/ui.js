@@ -224,6 +224,8 @@ const Settings = {
     $('#sBase').value = s.baseUrl; $('#sKey').value = s.apiKey; $('#sModel').value = s.model;
     this.maskKey($('#sKey'), $('#sKeyShow'));
     $('#sName').value = s.name; $('#sPersona').value = s.persona;
+    $('#sUserName').value = s.userName;
+    this.profileDates(...s.birthday.split('-'));
     $('#sAiChat').checked = s.aiChat; $('#sAiReact').checked = s.aiReact; $('#sBubbleOnly').checked = !!s.bubbleOnly; $('#sSleep').value = String(s.sleepAfter);
     $('#sLevel').value = s.pet.level; $('#sScale').value = s.pet.scale; $('#sClick').checked = s.pet.clickThrough; $('#sStartPet').checked = !!s.pet.startAsPet;
     $('#sScaleOut').textContent = Math.round(s.pet.scale * 100) + '%';
@@ -246,6 +248,18 @@ const Settings = {
     I18n.label(button, visible ? '隐藏' : '显示密钥');
     if (!visible && I18n.locale !== 'en') button.textContent = '显示';
     button.setAttribute('aria-pressed', String(visible));
+  },
+  profileDates(month = $('#sBirthMonth').value, day = $('#sBirthDay').value) {
+    const monthField = $('#sBirthMonth'), dayField = $('#sBirthDay');
+    const format = new Intl.DateTimeFormat(I18n.locale, { month: 'long', timeZone: 'UTC' });
+    const value = number => String(number).padStart(2, '0');
+    monthField.replaceChildren(new Option(I18n.pick('月份', 'Month'), ''), ...Array.from({ length: 12 }, (_, i) =>
+      new Option(format.format(Date.UTC(2000, i, 1)), value(i + 1))));
+    monthField.value = month || '';
+    const max = monthField.value ? new Date(Date.UTC(2000, Number(monthField.value), 0)).getUTCDate() : 0;
+    dayField.replaceChildren(new Option(I18n.pick('日期', 'Day'), ''), ...Array.from({ length: max }, (_, i) => new Option(i + 1, value(i + 1))));
+    dayField.value = max && Number(day) <= max ? day || '' : '';
+    dayField.disabled = !max;
   },
   feedback(selector, message = '', tone = '') {
     const node = $(selector);
@@ -322,6 +336,8 @@ const Settings = {
     return {
       preset: k, kind: AI_PRESETS[k].kind, baseUrl: $('#sBase').value.trim(), apiKey: $('#sKey').value.trim(), model: $('#sModel').value.trim(),
       name: $('#sName').value.trim() || '千绘莉', persona: $('#sPersona').value.trim() || DEFAULT_PERSONA,
+      userName: UserProfile.name($('#sUserName').value),
+      birthday: $('#sBirthMonth').value ? `${$('#sBirthMonth').value}-${$('#sBirthDay').value}` : '',
       aiChat: $('#sAiChat').checked, aiReact: $('#sAiReact').checked, bubbleOnly: $('#sBubbleOnly').checked, sleepAfter: +$('#sSleep').value,
       ambientMinutes: +$('#sAmbient').value,
       pet: { level: $('#sLevel').value, scale: +$('#sScale').value, clickThrough: $('#sClick').checked, startAsPet: $('#sStartPet').checked },
@@ -330,6 +346,11 @@ const Settings = {
   },
   async save() {
     if (this.loading || this.saving) return;
+    if ($('#sBirthMonth').value && !$('#sBirthDay').value) {
+      toast('请选择生日日期，或清空月份。', 3000, 'pout');
+      $('#sBirthDay').focus();
+      return;
+    }
     this.saving = $('#sSave').disabled = $('#settings .body').inert = true;
     const was = Voice.engine(), chieri = JSON.stringify(Store.data.tts.chieri);
     const actions = {
@@ -513,6 +534,7 @@ function applyLanguage(locale) {
   Store.data.locale = locale;
   I18n.apply(locale);
   applyNames();
+  Settings.profileDates();
   if (DESKTOP) {
     MemoryUI.modeHelp();
     $('#pFrequency').onchange();
@@ -672,6 +694,7 @@ function initUI() {
   $('#settings .body').addEventListener('scroll', () => Settings.markSection(), { passive: true });
   $('#settings').addEventListener('pointerdown', e => { if (e.target.id === 'settings') Settings.close(); });
   $('#sSave').onclick = () => Settings.save();
+  $('#sBirthMonth').onchange = () => Settings.profileDates();
   $('#sTest').onclick = () => Settings.test();
   $('#sKeyShow').onclick = () => Settings.maskKey($('#sKey'), $('#sKeyShow'), $('#sKey').type === 'password');
   $('#sPreset').onchange = () => { const p = AI_PRESETS[$('#sPreset').value]; if (p.baseUrl || $('#sPreset').value !== 'custom') { $('#sBase').value = p.baseUrl; $('#sModel').value = p.model; } Settings.note(); };

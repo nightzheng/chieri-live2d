@@ -151,6 +151,12 @@
         <fieldset>
           <legend>角色</legend>
           <label class="f"><span>名字</span><input id="sName" maxlength="12"></label>
+          <label class="f"><span>你的称呼</span><input id="sUserName" maxlength="32" placeholder="可选，例如小林"></label>
+          <div class="f"><span>你的生日</span><span class="row2">
+            <select id="sBirthMonth" aria-label="生日月份"></select>
+            <select id="sBirthDay" aria-label="生日日期"></select>
+          </span></div>
+          <p class="note">称呼和生日都可留空。生日只填月和日，用于当天问候。</p>
           <label class="f top"><span>人设</span><textarea id="sPersona" rows="8"></textarea></label>
           <label class="f"><span>睡觉</span><select id="sSleep">
             <option value="60">鼠标 1 分钟不动后犯困入睡</option>
@@ -382,6 +388,7 @@
 </div>
 <script src="js/i18n-en.js"></script>
 <script src="js/i18n.js"></script>
+<script src="js/user-profile.js"></script>
 <script src="js/config.js"></script>
 <script src="js/lines_ja.js"></script>
 <script src="js/rig.js"></script>

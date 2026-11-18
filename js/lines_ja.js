@@ -3,6 +3,7 @@
 // Chieri GPT-SoVITS model only knows Japanese); lines missing here are translated by the AI model.
 // An empty string means the line has no words to speak.
 const VOICE_JA = {
+  '生日快乐！今天也要过得开心呀。': 'お誕生日おめでとうございます！今日は楽しい一日になりますように。',
   // Time-aware greetings and wellness reminders
   '早上好呀，今天也按自己的节奏来吧。': 'おはようございます。今日も自分のペースでいきましょう。',
   '中午好呀，要不要给自己留一点休息时间？': 'こんにちは。少し休憩する時間を取りませんか？',

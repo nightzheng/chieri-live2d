@@ -14,7 +14,9 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
 |---|---|
 | `1.png` / `2.png` | 原始立绘，1024×1536，透明底。姿势 a（抱臂）/ 姿势 b（托腮）。**所有配置坐标都是这两张图的像素坐标** |
 | `chc/` | 表情差分素材（见下文「素材」）。代码只用到 `chi12A_*`（配 1.png）和 `chi11A_*`（配 2.png） |
-| `index.html` | 唯一的页面。脚本按顺序加载：`config.js → lines_ja.js → rig.js → voice.js → ai.js → app.js → ui.js`（全局作用域，无模块、无打包） |
+| `index.html` / `data-manager.html` | 主窗口和桌宠共用首页，独立窗口管理长期记忆和聊天。脚本标签直接加载浏览器 JS |
+| `js/i18n.js` / `js/i18n-en.js` | 界面语言、固定台词和数据窗口的英文映射 |
+| `js/user-profile.js` | 浏览器与 Electron 共用的称呼清理、生日月日校验和本机日期匹配 |
 | `js/config.js` | 角色绑定数据：两个姿势的部位坐标、表情映射、触摸区域、马尾轮廓；全部台词 `LINES` |
 | `js/lines_ja.js` | `VOICE_JA`：每句固定台词（`LINES` + app.js / ui.js 里直接写的几句）的日语版，键是中文原文；`''` 表示这句不出声 |
 | `js/voice.js` | 语音的页面一侧：引擎表 `TTS_ENGINES`、默认设置 `DEFAULT_TTS`、`Voice`（翻译成日语、请求、WebAudio 播放、口型响度、预生成） |
@@ -27,12 +29,15 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
 | `art/` | GPT Image 生成的界面原图和提示词 `千绘莉化_提示词.md`。不打包进程序，`img/` 由它生成 |
 | `electron/main.js` | 桌面外壳：主窗口（studio）和透明桌宠窗口二选一、托盘、右键菜单、设置文件（API Key 用 `safeStorage` 加密）、代发 AI 请求、全屏光标轮询、开机自启（`loginItem` / `setLoginItem`） |
 | `electron/voice.js` | 语音的主进程一侧：`tts:fetch`（在线请求 + 磁盘缓存）、本地模型进程（启动 `voice/chieri_server.py`、排队、过期请求跳过）、运行环境的检测和一键安装 |
-| `electron/preload.js` | 页面和外壳之间**唯一**的接口 `window.petAPI`（contextIsolation + sandbox） |
+| `electron/preload.js` / `electron/data-preload.js` | 页面与外壳之间的接口。管理窗口用独立、受限的数据接口 |
+| `electron/memory-store.js` / `electron/memory-ipc.js` | SQLite 迁移、备份、长期记忆提取与检索，以及历史对话管理 |
+| `electron/companion-ipc.js` / `electron/agenda.js` / `electron/proactive.js` | 日程提醒、主动互动调度和自适应陪伴状态 |
+| `electron/vision-ipc.js` / `electron/vision.js` | 共享来源与预览、屏幕授权、隐私关键词与视觉 API |
 | `voice/chieri_server.py` | 本地声线服务：加载模型包一次，`POST /tts {text}` 返回 WAV，只听 127.0.0.1，启动它的 App 进程（`--parent`）不在了就退出；加载的每一步超过 90 秒会把 Python 调用栈打到日志里 |
 | `voice/Chieri_GPTSoVITS_20261103/` | 千绘莉 GPT-SoVITS 模型包（权重、参考音频、固定版本的 GPT-SoVITS 源码和全部预训练模型，约 1.4 GB）。**只装进完整版**。读它自己的 `README.md` / `handoff.json`。1.2.5 起两个权重都是 **B站 雪村落雪** 提供的 v2ProPlus 模型（见「历史」）；界面、README、完整版安装包都要注明「感谢模型提供者，B站id：雪村落雪提供的模型」 |
 | `io/` | 用户放进来的雪村落雪模型原件：`千绘莉-e50.ckpt`（GPT）、`千绘莉_e20_s6420.pth`（SoVITS v2ProPlus），已复制进模型包的 `delivery/` |
 | `rg.txt` | 用户写的角色设定，就是默认人设的来源（内容复制在 `ai.js` 里，改了要同步） |
-| `build/` | 图标、托盘图标 `tray.png` / `tray@2x.png`（`ui-art.ps1` 从徽章生成）、NSIS 安装界面图（`tools/installer-art.ps1` 生成）、`installer.nsh`（安装页文字；`customInit` / `customUnInit` 先结束残留的本地语音进程；`customUnInstall` 在真正卸载时删掉开机自启的注册表项）、`installer-full.nsh`（完整版用：定义 `CHIERI_FULL` 再 `!include "${__FILEDIR__}\installer.nsh"`，完成页多一行模型致谢）、`full.config.js` / `lite.config.js`（两个版本的 electron-builder 配置） |
+| `build/` | 图标、托盘图标 `tray.png` / `tray@2x.png`（`ui-art.ps1` 从徽章生成）、NSIS 安装界面图（`tools/installer-art.ps1` 生成）、`installer.nsh`（安装页文字、现有目录识别和应用退出检查。正在使用的文件会提示重试，真正卸载时清理开机启动项）、`installer-full.nsh`（完整版用：定义 `CHIERI_FULL` 再 `!include "${__FILEDIR__}\installer.nsh"`，完成页多一行模型致谢）、`full.config.js` / `lite.config.js`（两个版本的 electron-builder 配置） |
 | `tools/align.html` | 求表情差分 → 立绘的对齐矩阵（梯度 NCC 粗到细搜索），结果就是 `config.js` 里的 `M` |
 | `tools/sheet.html` | 把一套差分拼成网格图，挑表情时看 |
 | `tools/ui-art.ps1` + `tools/Img.cs` | 把 `art/` 的原图做成 `img/`：抠图图片的 alpha 拉伸（生成图内部只有 252–254，外面有一圈淡雾）、去掉零散小点、裁到内容、高质量缩放（预乘 alpha，没有黑边）；粒子去掉光晕后按格切开拼成图集。`Img.cs` 是 System.Drawing + LockBits 的小工具类，脚本用 `Add-Type` 编译 |
@@ -81,8 +86,9 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
 - **本地模型进程**：`startServer` 用 `pythonFor()`（设置里的 python.exe，否则 `%LOCALAPPDATA%\chieri-tts\env`）跑 `chieri_server.py --model … --cache %LOCALAPPDATA%\chieri-tts\cache --device auto|cuda|cpu`，等标准输出里的 `CHIERI_READY {port, device, gpu, model, seconds}`（`model` = 实际加载的权重：GPT / SoVITS 的 sha256 前 8 位、`verified` 是否和 `training-summary.json` 记录的一致、`label` 一致时取 `model_update.info`（旧包是 `gpt_update.info`），界面上显示成「雪村落雪 · GPT-e50 / SoVITS-e20 afb37bc7」）；状态（off / starting / ready / error，ready 时带 `model`）推给页面（`tts:state`），日志推 `tts:log`。
   - 重启（1.2.6）：已有服务时，Python / 设备 / `modelId()` 变了才换掉它，换的时候日志写「■ 停止语音进程：原因（它加载了 N 秒，还没加载完）」；只是要求重启（「加载 / 重启模型」、保存语音设置）而设置没变、服务还在加载且不到 `LOAD_PATIENCE`（3 分钟）时不动它，只提示「模型还在加载」——导入 PyTorch 和 GPT-SoVITS 要一分钟以上且没有输出，以前用户以为卡住了去点重启，正好把它杀掉重来，永远加载不完。被换掉的服务的 promise 带 `stopped: true` 拒绝：`tts:start` 不再记成「✘ 语音进程已停止」也不置 error（以前会弹「本地语音：语音进程已停止」，引人再点重启），排队等它的台词改交给新服务。加载中每 20 秒提示一次「仍在加载」（`note()`：不进 `tail`，免得崩溃信息引用的最后两行变成它）；服务自己也打印阶段（导入 PyTorch / 导入 GPT-SoVITS / 加载权重 / 预热）。
   - 卡住时（1.2.7）：每个阶段用 `stage()` 开始，它重新挂上 `faulthandler.dump_traceback_later(STALL=90, repeat=True)`——一步超过 90 秒，所有线程的 Python 调用栈就打到 stderr（C 层的看门狗，主线程卡在 DLL 加载之类持有 GIL 的地方也能打出来），之后每 90 秒再打一次；预热完成后取消。日志里遇到 `Timeout (` 开头的行，前面会先插一句中文说明。超过 `LOAD_TIMEOUT`（10 分钟）还没就绪就杀掉，状态置 error，消息指向这些调用栈。拿到用户日志时先看最后一段调用栈的最内层几帧。
-  - 服务端：哈希对不上只警告、照样加载（以前直接 `SystemExit`，更新时换不掉文件就整个起不来）；权重文件不存在、或者 `TTS_Config` 悄悄回退到了预训练底模（路径解析不到时它会这么做），则明确报错退出。`watch_parent` 线程在 `main()` 一开头就启动：`OpenProcess(SYNCHRONIZE)` + `WaitForSingleObject` 等 `--parent`（Electron 主进程的 pid）退出，App 一退出它马上退出，加载到一半也一样（1.2.3 以前加载完才开始监听，被中途关掉的服务会继续占着显存和安装目录里的文件，覆盖安装就可能换不掉旧模型）。1.2.4–1.2.6 是用线程阻塞读 stdin 来等 App 关闭，1.2.7 起服务**没有 stdin**（`stdio: ['ignore', …]`）：Windows 上一个同步管道句柄有未完成的读时，对它的其他操作都会排队等着，而子进程（ffmpeg 等）启动时 CRT 要对继承来的 stdin 调 `GetFileType`，会一直卡住。`skip_web_ui()` 在导入 TTS 前放一个假的 `gradio` 模块：`tools/my_utils.py` 只在训练界面的函数里用 `gr.Warning`，真的 gradio 会连带导入 fastapi / uvicorn / httpx / pydantic 整套网页栈。matplotlib 不能这样跳过：torchmetrics（经 pytorch_lightning）导入时就要 `matplotlib.axes` / `pyplot`。
-  - venv 的 `Scripts\python.exe` 只是个启动器，真正的解释器是它的子进程，所以 `proc.kill()` 杀不掉服务：停止时直接 `taskkill /T /F` 整棵进程树（`killTree`，进程已经退出就不杀，免得 pid 被别的进程复用；服务里只有内存中的模型，没什么要保存的）；`will-quit` 时立刻同步 taskkill。每次运行第一次启动服务（以及一键安装）之前，`stopStrays` 用 PowerShell 找命令行里带 `chieri_server.py` 的 **python** 进程并结束（只认 python：执行这条命令的 PowerShell 自己的命令行里也有这个文件名，不过滤就会先把自己杀掉）。安装包的 `customInit` / `customUnInit` 做同样的事。服务的参数照模型包 README：all_ja、seed、cut0、top_k 15、top_p 1、temperature 1、repetition_penalty 1.2；工作目录切到 `vendor/GPT-SoVITS`、权重用相对路径，因为安装路径里有中文（「千绘莉」），pyopenjtalk 读不了非 ASCII 路径。
+  - 服务端：权重哈希不一致会提示，权重缺失或回退到底模则报错。当前桌面端用 `--watch-stdin` 启动语音子进程，关闭管道时它退出。Windows 监听的是管道状态，不用阻塞读。超时只尝试结束当前实例的语音子进程。取消运行环境安装时只处理当前跟踪的安装命令及其子进程。
+  - NSIS 根据所选安装目录请求对应的应用窗口退出，并检查程序和模型文件是否还被占用。占用时提示等待或取消。程序和安装器用现有的安装文件识别覆盖目录。旧卸载器的 Python 扫描行为见「历史」。
+  - 服务参数跟随模型包中的参考音频和推理设置。工作目录切到 `vendor/GPT-SoVITS`，模型路径兼容含中文的安装位置。
 - **一键安装**（`setup`）：找 64 位 Python 3.12（py 启动器或常见安装目录，不碰 `python` 别名，以免弹出应用商店）→ `venv` → PyTorch 2.7.1（`nvidia-smi` 能列出显卡就装 cu128，否则 CPU 版）→ 模型包的 `requirements-locked.txt`（可选清华镜像）→ 检测。检测通过才写 `env\chieri-ready.json`（开始安装时先删掉），默认环境**有这个标记才算就绪**（`pythonFor`），安装进行中 `startServer` 直接拒绝——venv 在第一步就建好了，以前只看 `python.exe` 在不在，装 PyTorch 的时候她一说话就会把服务拉起来，报 `No module named 'jieba'`（1.2.2 修）。**进度条**（1.2.5）：`progressBar(job)` 把五步（查找 Python / venv / PyTorch / 依赖 / 检测）按大致耗时分成份额（显卡版 PyTorch 占 62%），`tts:progress {pct, step, steps, title, detail, pulse, done, ok}` 最多 200 ms 推一次（最后的状态一定会发出），`info().progress` 让中途打开的设置也能看到；`pipMeter` 解析 pip 的输出：pip 24.1+ 加 `--progress-bar raw`（先 `pip --version` 判断），它每 0.25 秒打一行 `Progress <已下> of <总数>`（只针对 > 512 KB 的文件），这些行不进日志；PyTorch 一步按字节（估计 3.35 GB / CPU 0.28 GB，看到更大的文件就上调），依赖一步按包数（`requirements-locked.txt` 的行数，每个包解析时算 1/4、下载完算 3/4——新 pip 先只拿 metadata 解析完，再统一下载 wheel），`Building wheel` 90%、`Installing collected packages` 93%（`pulse` 条纹），没有 raw 进度时每个文件只跳一次并显示条纹。页面一侧是 `VoiceUI.progress`（`#vProg`）。只有 venv、没有标记的是「没装完」（`envPartial`，界面显示「继续安装」）；1.2.1 以前装好的环境没有标记，启动时 `adoptEnv` 跑一次检测，通过就补上。设置里填了自己的 python.exe 时不受标记和安装状态影响。主进程这一侧的逻辑可以 mock 掉 `electron` 和 `child_process` 在纯 Node 里测（不需要 Python）。
 
 ### 坐标系
@@ -134,6 +140,7 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
 - 桌面 SQLite 保存聊天、长期记忆和提醒。默认按本地规则自动保存，AI 辅助可在旧消息移出上下文时提取。迁移前生成一致性快照。
 - 主动闲聊支持自适应间隔和屏幕授权。日常动作与语气词同步触发。NSIS 支持识别已有安装目录，正式覆盖安装和真实服务按需在隔离环境复测。
 - 生活提醒复用桌面提醒轮询。`electron/wellness.js` 按系统空闲时间累计喝水和起身间隔，并用本机时区记录每晚的夜深提醒。`localClock` 给即时问时、AI 回复和主动问候提供当前时段。
+- 角色设置保存可选的 `userName` 和 `birthday`。生日格式是 `MM-DD`。开场按设备本地日期匹配，AI 提示词只包含称呼和当天是否生日。
 - 中英文 README 记录当前用法，版本变更和测试细节可查 Git 历史。
 
 ## 历史：用户明确要求过 / 否决过的事

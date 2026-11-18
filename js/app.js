@@ -1583,8 +1583,17 @@ setInterval(() => {
 //  Boot
 // ============================================================================
 function greetOnStart() {
-  const greeting = Rec.on ? LINES.greet[0] : TIME_GREETINGS[localClock().period];
-  say(greeting, 'smile', 2.5, { ja: VOICE_JA[greeting] });
+  if (Rec.on) {
+    const line = LINES.greet[0];
+    say(line, 'smile', 2.5, { ja: VOICE_JA[line] });
+    return;
+  }
+  const now = new Date();
+  const line = UserProfile.isBirthday(Store.data.birthday, now) ? '生日快乐！今天也要过得开心呀。' : TIME_GREETINGS[localClock(now).period];
+  const nickname = UserProfile.name(Store.data.userName);
+  const words = I18n.fixed(line);
+  const greeting = nickname ? nickname + I18n.pick('，', ', ') + words : words;
+  say(greeting, 'smile', 2.5, { ja: VOICE_JA[line], translate: false });
 }
 
 // waits for ui.js, which loads after this file
