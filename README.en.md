@@ -215,7 +215,7 @@ Note: this is a Live2D-style rig implemented in a web page, not a `.moc3` model 
 
 ## Memory and data (Windows desktop)
 
-Use **English / 中文** at the top of Settings to switch the interface, new chat replies, and built-in dialogue. Desktop windows share the preference. The web app remembers its own choice. Existing chats, reminder titles, and stored memories keep their original text. Japanese voice engines still speak Japanese. For example, say “Remember that I like coffee” or “Remind me tomorrow at 09:00 to call home.”
+Use **English / 中文** at the top of Settings to switch the interface, new chat replies, preset interaction lines, startup greetings, ambient phrases, and proactive chat. Desktop windows share the preference. The web app remembers its own choice. Existing chats, reminder titles, and stored memories keep their original text. Japanese voice engines still speak Japanese. For example, say “Remember that I like coffee” or “Remind me tomorrow at 09:00 to call home.”
 
 Open **Memory and data** in Settings. Local rules are enabled by default and save qualifying memories directly. Say “千绘莉，记住我喜欢喝冰美式” (“Chieri, remember that I like iced Americanos”) to save it explicitly. “更正：我不喜欢喝冰美式” (“Correction: I dislike iced Americanos”) archives the earlier preference. Local rules work without an AI provider. Existing mode preferences are preserved.
 
@@ -228,7 +228,7 @@ Open **Memory and data** in Settings. Local rules are enabled by default and sav
 
 ## Reminders, proactive chat, and screen vision
 
-- Enable hydration, stand-up, or late-night reminders under **Reminders & schedule → Wellness reminders**. Hydration and stand-up reminders count active computer time. The late-night reminder defaults to 23:30 local time and appears at most once per night while the computer is active. Ask “What time is it?” for your device time. Chat and proactive greetings use the device’s time of day.
+- Enable hydration, stand-up, or late-night reminders under **Reminders & schedule → Wellness reminders**. Hydration and stand-up reminders count active computer time. The late-night reminder defaults to 23:30 local time and appears at most once per night while the computer is active. Ask “What time is it?” for your device time. Chat, proactive greetings, and the opening line when entering desktop-pet mode use the device’s time of day.
 
 - In **提醒与日程** (Reminders and schedule), create one-off, daily, weekly, weekday, or custom weekly reminders. You can also say “明天十点提醒我开会” (“Remind me to attend the meeting tomorrow at ten”) and confirm the proposed schedule. Notifications and voice have separate switches. The configured local Chieri voice can use a fixed Japanese reminder line without a chat API. Missed reminders appear on return from sleep or after restarting, with replay, snooze, and completion controls.
 - **主动互动** (Proactive chat) is off by default. Set randomized intervals, quiet hours, a daily limit, and separate options for AI, long-term memory, and voice. Pause proactive chat from the tray while keeping reminders running. User interactions, scheduled reminders, and existing audio take priority.
