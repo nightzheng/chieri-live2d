@@ -1582,6 +1582,11 @@ setInterval(() => {
 // ============================================================================
 //  Boot
 // ============================================================================
+function greetOnStart() {
+  const greeting = Rec.on ? LINES.greet[0] : TIME_GREETINGS[localClock().period];
+  say(greeting, 'smile', 2.5, { ja: VOICE_JA[greeting] });
+}
+
 // waits for ui.js, which loads after this file
 window.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -1594,10 +1599,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     activate(first);
     $('#loading').classList.add('done');
     requestAnimationFrame(frame);
-    setTimeout(() => {
-      const g = pickLine(LINES.greet);
-      say(g.replace('你好呀', `你好呀，我是${Store.data.name}`), 'smile', 2.5, { ja: g === '你好呀～' ? `こんにちは、${Voice.jaName()}です～` : null });
-    }, 700);
+    setTimeout(greetOnStart, 700);
     window.__L2D = { S, poses, get pose() { return pose; }, setFace, say, hop, toScreen, view, hitTest, Voice };
   } catch (err) { console.error(err); $('#loadText').textContent = '加载失败：' + err.message; }
 });

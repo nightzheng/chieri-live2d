@@ -167,6 +167,22 @@ async function run() {
   assert.equal(await js("document.querySelector('#aZone').tagName"), 'SELECT');
   assert.deepEqual(await js("[5, 11, 14, 18, 23].map(hour => localClock(new Date(2026, 10, 18, hour)).period)"),
     ['早上', '中午', '下午', '晚上', '深夜']);
+  const openings = await js(`(() => {
+    const clock = localClock, speak = say, recording = Rec.on, lines = [];
+    say = (text, _, __, {ja}) => lines.push([text, ja]);
+    try {
+      Rec.on = false;
+      for (const hour of [8, 12, 15, 20, 23]) {
+        localClock = () => clock(new Date(2026, 10, 18, hour));
+        greetOnStart();
+      }
+      Rec.on = true;
+      greetOnStart();
+      return lines;
+    } finally { localClock = clock; say = speak; Rec.on = recording; }
+  })()`);
+  assert.deepEqual(openings.map(([line]) => line.slice(0, 2)), ['早上', '中午', '下午', '晚上', '夜深', '欢迎']);
+  assert.ok(openings.every(([, ja]) => ja));
   assert.match(await js("localTimeReply('现在几点？').reply"), /现在是.*\d{2}:\d{2}/);
   await js(`(async () => {
     for (let i = 0; i < 13; i++) await petAPI.memory('save', {content:'样本记忆 ' + i, type:'事实', tags:''});
