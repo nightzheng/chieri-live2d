@@ -35,11 +35,11 @@ const CompanionUI = {
       zone.replaceChildren(...zones.map(value => new Option(value === timezone ? '本机 · ' + value : value, value)));
       this.edit();
     }
-    const format = (at, zone = timezone) => new Intl.DateTimeFormat(undefined, {
+    const format = (at, zone = timezone) => new Intl.DateTimeFormat(I18n.locale, {
       timeZone: zone, dateStyle: 'medium', timeStyle: 'short',
     }).format(at);
     $('#aList').replaceChildren(...reminders.map(row => MemoryUI.row(row.title, [
-      row.enabled ? '启用' : '已暂停 / 完成', row.timezone,
+      I18n.text(row.enabled ? '启用' : '已暂停 / 完成'), row.timezone,
       row.next_fire_at ? format(row.next_fire_at, row.timezone) : row.day + ' ' + row.time,
     ].join(' · '), [
       MemoryUI.button('编辑', () => this.edit(row)),
@@ -47,14 +47,14 @@ const CompanionUI = {
       MemoryUI.button('删除', () => { if (window.confirm('删除这项提醒和它的执行记录？')) this.change('remove', row.id); }),
     ])));
     $('#aEvents').replaceChildren(...events.map(row => MemoryUI.row(row.title + (row.content && row.content !== row.title ? '\n' + row.content : ''),
-      ({ ready: '待显示', missed: '错过', shown: '待完成', scheduled: '稍后提醒' })[row.state] + ' · ' + format(row.at), [
+      I18n.text(({ ready: '待显示', missed: '错过', shown: '待完成', scheduled: '稍后提醒' })[row.state]) + ' · ' + format(row.at), [
         ...(row.state === 'missed' ? [MemoryUI.button('补发', () => this.change('event', { id: row.id, action: 'replay' }))] : []),
         ...(row.state !== 'scheduled' ? [MemoryUI.button('10 分钟后提醒', () => this.change('event', { id: row.id, action: 'snooze' }))] : []),
         MemoryUI.button('完成', () => this.change('event', { id: row.id, action: 'done' })),
         MemoryUI.button('跳过', () => this.change('event', { id: row.id, action: 'skip' })),
       ])));
-    if (!reminders.length) $('#aList').textContent = '暂无提醒';
-    if (!events.length) $('#aEvents').textContent = '没有待处理的提醒';
+    if (!reminders.length) $('#aList').textContent = I18n.text('暂无提醒');
+    if (!events.length) $('#aEvents').textContent = I18n.text('没有待处理的提醒');
   },
   change(op, value) { return this.task('#aFeedback', async () => { await this.call(op, value); await this.refresh(); }); },
   edit(row) {
@@ -75,7 +75,7 @@ const CompanionUI = {
     $('#aNotify').checked = row ? !!row.notify : true;
     [...$('#aWeekdays').querySelectorAll('input')].forEach((box, i) => { box.checked = !!((row?.weekdays || 0) & (1 << i)); });
     $('#aRepeat').onchange();
-    $('#aSave').textContent = row ? '保存修改' : '创建提醒';
+    I18n.label($('#aSave'), row ? '保存修改' : '创建提醒');
     if (row) $('#aTitle').focus();
   },
   async save() {
@@ -102,7 +102,8 @@ const CompanionUI = {
   },
   async refreshState() {
     const p = await this.call('status', { busy: this.busy(), recording: Rec.on });
-    const label = p.state + ' · ' + p.reason + (p.lastSpoken ? ' · 上次主动发言 ' + new Date(p.lastSpoken).toLocaleString() : '');
+    const label = I18n.text(p.state) + ' · ' + I18n.text(p.reason) +
+      (p.lastSpoken ? I18n.pick(' · 上次主动发言 ', ' · Last proactive chat ') + new Date(p.lastSpoken).toLocaleString(I18n.locale) : '');
     if ($('#pState').textContent !== label) $('#pState').textContent = label;
   },
   readOptions() {
@@ -155,7 +156,7 @@ const CompanionUI = {
   deliver(event) {
     if (this.lowPriorityVoice()) Voice.interrupt();
     if (S.anim?.ambient) S.anim = null;
-    const words = '时间到了，记得' + event.title + '。';
+    const words = I18n.pick('时间到了，记得' + event.title + '。', 'Reminder: ' + event.title);
     Chat.card('happy', words, ['查看提醒', () => this.showAgenda()]);
     say(words, 'smile', 5, { kind: 'reminder', voice: !!event.voice, ja: '時間ですよ。予定を確認してくださいね。' });
     if (!$('#settings').classList.contains('hidden')) this.task('#aFeedback', () => this.refresh());
@@ -225,8 +226,9 @@ const CompanionUI = {
       const custom = $('#pFrequency').value === 'custom', min = +$('#pMin').value;
       $('#pMin').disabled = !custom;
       $('#pFrequencyHelp').textContent = custom && min >= 10 && min <= 1440
-        ? `主动闲聊通常每 ${min}–${min * 2} 分钟一次。安静时段、连续未回应或达到每日上限时可能更久。`
-        : '括号内是主动闲聊的基础间隔。安静时段、连续未回应或达到每日上限时可能更久。';
+        ? I18n.pick(`主动闲聊通常每 ${min}–${min * 2} 分钟一次。安静时段、连续未回应或达到每日上限时可能更久。`,
+          `Proactive chat usually runs every ${min}–${min * 2} minutes. Quiet hours, unanswered chats or the daily limit may delay it.`)
+        : I18n.text('括号内是主动闲聊的基础间隔。安静时段、连续未回应或达到每日上限时可能更久。');
     };
     $('#pFrequency').onchange = $('#pMin').oninput = updateFrequency;
     $('#pEnabled').onchange = $('#pAI').onchange = $('#pVision').onchange = () => this.visionControls();

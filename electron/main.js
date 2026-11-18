@@ -5,6 +5,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, protocol, net, screen, nativeIm
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
+const ENGLISH = require('../js/i18n-en');
 
 const ROOT = path.join(__dirname, '..');
 const ICON = path.join(ROOT, 'build', 'icon.png');
@@ -48,6 +49,9 @@ function saveSettings() {
   fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(out, null, 2));
 }
 function broadcast() { for (const w of BrowserWindow.getAllWindows()) w.webContents.send('settings:changed'); }
+const localize = text => settings.locale === 'en' && Object.hasOwn(ENGLISH, text) ? ENGLISH[text] : text;
+const language = (zh, en) => settings.locale === 'en' ? en : zh;
+const displayName = () => (settings.name && settings.name !== '千绘莉') ? settings.name : localize('千绘莉');
 require('./voice')(() => settings);   // text-to-speech: online services and the bundled local model
 
 // ---------------------------------------------------------------- start with Windows
@@ -78,7 +82,7 @@ const webPreferences = { preload: path.join(__dirname, 'preload.js'), contextIso
 
 function openDataWindow() {
   if (dataWindow) { dataWindow.show(); dataWindow.focus(); return; }
-  dataWindow = new BrowserWindow({ width: 900, height: 740, minWidth: 520, minHeight: 420, title: '记忆与聊天记录', icon: ICON,
+  dataWindow = new BrowserWindow({ width: 900, height: 740, minWidth: 520, minHeight: 420, title: localize('记忆与聊天记录'), icon: ICON,
     backgroundColor: '#141629', autoHideMenuBar: true, show: false,
     webPreferences: { ...webPreferences, preload: path.join(__dirname, 'data-preload.js') } });
   dataWindow.setContentProtection(true);
@@ -86,12 +90,12 @@ function openDataWindow() {
   dataWindow.webContents.on('will-navigate', event => event.preventDefault());
   dataWindow.once('ready-to-show', () => dataWindow?.show());
   dataWindow.on('closed', () => { dataWindow = null; });
-  dataWindow.loadURL('app://local/data-manager.html');
+  dataWindow.loadURL('app://local/data-manager.html?lang=' + (settings.locale === 'en' ? 'en' : 'zh-CN'));
 }
 
 function openStudio() {
   if (studio) { studio.show(); studio.focus(); return; }
-  studio = new BrowserWindow({ width: 1280, height: 820, minWidth: 720, minHeight: 560, title: settings.name || '千绘莉', icon: ICON,
+  studio = new BrowserWindow({ width: 1280, height: 820, minWidth: 720, minHeight: 560, title: displayName(), icon: ICON,
     backgroundColor: '#141629', autoHideMenuBar: true, show: false, webPreferences });
   studio.setMenuBarVisibility(false);
   studio.loadURL('app://local/index.html');
@@ -151,14 +155,14 @@ function toStudio() { openStudio(); if (pet) pet.close(); }
 // ---------------------------------------------------------------- tray + menus
 function petMenu() {
   const p = settings.pet, set = patch => { settings.pet = { ...settings.pet, ...patch }; saveSettings(); applyPet(); broadcast(); };
-  return [
+  const menu = [
     { label: '打开对话', enabled: !!pet, click: () => pet && pet.webContents.send('cmd', 'chat') },
     { label: '设置…', enabled: !!pet, click: () => pet && pet.webContents.send('cmd', 'settings') },
     { label: '暂停主动互动', click: () => { try { companion?.pause(); broadcast(); } catch (_) {} } },
     { label: '停止屏幕观察', click: () => vision?.stop() },
     { type: 'separator' },
     { label: '显示层级', submenu: Object.entries(LEVELS).map(([k, label]) => ({ label, type: 'radio', checked: p.level === k, click: () => set({ level: k }) })) },
-    { label: `大小（${Math.round((p.scale || 1) * 100)}%）`, submenu: [
+    { label: language('大小', 'Size') + ` (${Math.round((p.scale || 1) * 100)}%)`, submenu: [
       { label: '无级调节…', enabled: !!pet, click: () => { if (pet) { pet.showInactive(); pet.webContents.send('cmd', 'resize'); } } },
       { type: 'separator' },
       ...[[0.7, '小'], [1, '中'], [1.3, '大'], [1.6, '特大']].map(([k, label]) => ({ label, type: 'radio', checked: Math.abs((p.scale || 1) - k) < 0.01, click: () => set({ scale: k }) })),
@@ -171,12 +175,17 @@ function petMenu() {
     { label: pet && pet.isVisible() ? '隐藏到托盘' : '显示桌面宠物', click: () => { if (!pet) toPet(); else if (pet.isVisible()) pet.hide(); else pet.showInactive(); buildTray(); } },
     { label: '退出', click: () => { quitting = true; app.quit(); } },
   ];
+  const translate = items => items.map(item => ({ ...item,
+    ...(item.label ? { label: localize(item.label) } : {}),
+    ...(item.submenu ? { submenu: translate(item.submenu) } : {}),
+  }));
+  return translate(menu);
 }
 function buildTray() {
   if (!tray) {
     // her emblem (tools/ui-art.ps1 makes tray.png and tray@2x.png; the @2x one is picked on high-DPI screens)
     tray = new Tray(nativeImage.createFromPath(path.join(ROOT, 'build', 'tray.png')));
-    tray.setToolTip(settings.name || '千绘莉');
+    tray.setToolTip(displayName());
     tray.on('click', () => { if (pet) { pet.isVisible() ? pet.hide() : pet.showInactive(); buildTray(); } else openStudio(); });
   }
   tray.setContextMenu(Menu.buildFromTemplate(petMenu()));
@@ -198,9 +207,18 @@ function recShortcuts() {
 
 // ---------------------------------------------------------------- IPC
 ipcMain.handle('settings:get', () => settings);
+ipcMain.handle('settings:locale', (event, locale) => {
+  if (!trustedWindow(event) || !['zh-CN', 'en'].includes(locale)) throw new Error('Invalid language setting');
+  const previous = settings.locale;
+  settings.locale = locale;
+  try { saveSettings(); } catch (error) { settings.locale = previous; throw error; }
+  tray?.setToolTip(displayName());
+  if (tray) buildTray();
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send('settings:locale', locale);
+});
 ipcMain.handle('settings:set', (_, s) => {
   const keep = settings.pet; settings = { ...settings, ...s, pet: { ...keep, ...(s.pet || {}) } };
-  saveSettings(); applyPet(); recShortcuts(); tray && tray.setToolTip(settings.name || '千绘莉'); return true;
+  saveSettings(); applyPet(); recShortcuts(); tray && tray.setToolTip(displayName()); return true;
 });
 // AI calls go out from here: no CORS in the way, and the key never leaves this machine except to the endpoint
 let addMemoryContext, companion, vision;
@@ -300,11 +318,11 @@ app.whenReady().then(() => {
     open: openDataWindow,
     owns: sender => dataWindow?.webContents === sender,
     historyChanged: () => (pet || studio)?.webContents.send('memory:historyChanged'),
-  });
+  }, localize);
   addMemoryContext = memory.addMemoryContext;
-  companion = require('./companion-ipc')({ store: memory.store, trustedWindow, activeWindow: () => pet || studio, settings: () => settings,
+  companion = require('./companion-ipc')({ store: memory.store, trustedWindow, activeWindow: () => pet || studio, settings: () => settings, language,
     onSpoken: win => vision?.markSpoken(win) });
-  vision = require('./vision-ipc')(trustedWindow, () => pet || studio, () => companion.visionPolicy(), chatTarget);
+  vision = require('./vision-ipc')(trustedWindow, () => pet || studio, () => companion.visionPolicy(), chatTarget, language);
   recShortcuts();
   buildTray();
   setInterval(pollCursor, 33);

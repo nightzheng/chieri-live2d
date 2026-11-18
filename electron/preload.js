@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('petAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  setLocale: locale => ipcRenderer.invoke('settings:locale', locale),
+  onLocale: cb => ipcRenderer.on('settings:locale', (_, locale) => cb(locale)),
   setSettings: s => ipcRenderer.invoke('settings:set', s),
   memory: (operation, value) => ipcRenderer.invoke('memory:operate', operation, value),
   openDataManager: () => ipcRenderer.invoke('memory:manager'),

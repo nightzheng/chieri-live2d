@@ -147,7 +147,7 @@ const Voice = {
     this.pending++;
     try {
       const eng = this.engine();
-      const words = this.wantsJa() ? await this.toJa(text, opt.ja) : this.spoken(text);
+      const words = this.wantsJa() ? await this.toJa(text, opt.ja) : this.spoken(opt.translate === false ? text : I18n.fixed(text));
       if (!words || eng === 'off') return null;
       const bytes = await this.synth(eng, words, opt);
       return bytes ? await this.decode(bytes) : null;

@@ -13,7 +13,7 @@ const MemoryUI = {
     if (!window.dataAPI) return Settings.feedback(selector, message, tone);
     const node = memoryElement(selector);
     node.dataset.tone = tone;
-    node.textContent = message;
+    node.textContent = I18n.text(message);
   },
   async run(task, selector = '#mFeedback') {
     if (this.running) return;
@@ -63,7 +63,7 @@ const MemoryUI = {
       rules: '在本机按勾选类别识别「我喜欢」「我经常」等固定句式。符合条件的内容直接保存。临时事项、明显的假设和敏感信息会过滤。',
       ai: '保留本地规则。当旧消息超出 16 条或 6000 字符的聊天上下文预算时，可将最多三条筛选过的用户消息交给聊天服务。每 10 分钟最多一次，每 24 小时最多六次。通过检查后自动保存。',
     };
-    memoryElement('#mModeHelp').textContent = memoryElement('#mEnabled').checked ? explanations[memoryElement('#mAuto').value] : '已暂停候选提取和对话引用。你仍可管理已有记忆。';
+    I18n.label(memoryElement('#mModeHelp'), memoryElement('#mEnabled').checked ? explanations[memoryElement('#mAuto').value] : '已暂停候选提取和对话引用。你仍可管理已有记忆。');
   },
   async remember(text) {
     try {
@@ -73,7 +73,7 @@ const MemoryUI = {
   },
   button(text, action) {
     const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'mini'; btn.textContent = text;
+    btn.type = 'button'; btn.className = 'mini'; I18n.label(btn, text);
     btn.onclick = action;
     return btn;
   },
@@ -94,7 +94,7 @@ const MemoryUI = {
     memoryElement('#mImportance').value = row?.importance ?? 2;
     const time = row?.expires_at ? new Date(row.expires_at) : null;
     memoryElement('#mExpiry').value = time ? new Date(+time - time.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
-    memoryElement('#mSave').textContent = row ? '保存修改' : '添加记忆';
+    I18n.label(memoryElement('#mSave'), row ? '保存修改' : '添加记忆');
     memoryElement('#mCancel').classList.toggle('hidden', !row);
     if (row) { memoryElement('#mEditor').open = true; memoryElement('#mContent').focus(); }
   },
@@ -104,19 +104,21 @@ const MemoryUI = {
     if (!rows.length && this.offset) { this.offset -= this.pageSize; return this.list(); }
     memoryElement('#mPrev').disabled = this.offset === 0;
     memoryElement('#mNext').disabled = rows.length <= this.pageSize;
-    memoryElement('#mPage').textContent = `第 ${1 + this.offset / this.pageSize} 页`;
+    const page = 1 + this.offset / this.pageSize;
+    memoryElement('#mPage').textContent = I18n.pick(`第 ${page} 页`, `Page ${page}`);
     memoryElement('#mList').replaceChildren(...rows.slice(0, this.pageSize).map(row => this.row(row.content,
-      [row.type, row.tags, ({ manual: '手动', explicit: '明确保存', candidate: '本地规则', semantic: 'AI 辅助', import: '导入' })[row.source],
+      [I18n.text(row.type), row.tags, I18n.text(({ manual: '手动', explicit: '明确保存', candidate: '本地规则', semantic: 'AI 辅助', import: '导入' })[row.source]),
         row.expires_at && '有效至 ' + new Date(row.expires_at).toLocaleString(), new Date(row.confirmed).toLocaleDateString()].filter(Boolean).join(' · '), [
         this.button(row.archived ? '编辑并恢复' : '编辑', () => this.edit(row)),
         this.button('删除', () => this.run(async () => {
-          if (!window.confirm('删除这条长期记忆？')) return;
+          if (!window.confirm(I18n.text('删除这条长期记忆？'))) return;
           await this.request('remove', row.id);
           if (this.id === row.id) this.edit();
           await this.list();
         })),
       ])));
-    if (!rows.length) memoryElement('#mList').textContent = '没有匹配的记忆';
+    if (!rows.length) I18n.label(memoryElement('#mList'), '没有匹配的记忆');
+    else delete memoryElement('#mList').dataset.messageKey;
   },
   async history() {
     const rows = await this.request('conversations', { query: memoryElement('#mChatQuery').value, offset: this.chatOffset });
@@ -124,17 +126,19 @@ const MemoryUI = {
     if (!rows.length && this.chatOffset) { this.chatOffset -= this.pageSize; return this.history(); }
     memoryElement('#mChatPrev').disabled = this.chatOffset === 0;
     memoryElement('#mChatMore').disabled = byConversation.size <= this.pageSize;
-    memoryElement('#mChatPage').textContent = `第 ${1 + this.chatOffset / this.pageSize} 页`;
+    const page = 1 + this.chatOffset / this.pageSize;
+    memoryElement('#mChatPage').textContent = I18n.pick(`第 ${page} 页`, `Page ${page}`);
     memoryElement('#mHistory').replaceChildren(...Array.from(byConversation.values()).slice(0, this.pageSize).map(turn => this.row(
-      turn.map(row => (row.who === 'user' ? '我' : '千绘莉') + ' · ' + row.text).join('\n\n'),
+      turn.map(row => (row.who === 'user' ? I18n.pick('我', 'Me') : I18n.text('千绘莉')) + ' · ' + row.text).join('\n\n'),
       new Date(turn[0].created).toLocaleString(), [
         this.button('删除这轮对话', () => this.run(async () => {
-          if (!window.confirm('删除这轮对话中的全部消息？长期记忆保留。')) return;
+          if (!window.confirm(I18n.text('删除这轮对话中的全部消息？长期记忆保留。'))) return;
           await this.request('deleteConversation', turn[0].conversation);
           await this.history();
         })),
       ])));
-    if (!rows.length) memoryElement('#mHistory').textContent = '没有匹配的聊天记录';
+    if (!rows.length) I18n.label(memoryElement('#mHistory'), '没有匹配的聊天记录');
+    else delete memoryElement('#mHistory').dataset.messageKey;
   },
   init() {
     if (!window.petAPI) return;
@@ -171,12 +175,12 @@ const MemoryUI = {
     memoryElement('#mChatMore').onclick = () => this.run(async () => { this.chatOffset += this.pageSize; await this.history(); });
     memoryElement('#mChatPrev').onclick = () => this.run(async () => { this.chatOffset -= this.pageSize; await this.history(); });
     memoryElement('#mClearChat').onclick = () => this.run(async () => {
-      if (!window.confirm('清除全部聊天记录？长期记忆保留。')) return;
+      if (!window.confirm(I18n.text('清除全部聊天记录？长期记忆保留。'))) return;
       await this.request('clearHistory'); await this.history();
       this.feedback('#mFeedback', '聊天记录已清除', 'ok');
     });
     memoryElement('#mClearMemories').onclick = () => this.run(async () => {
-      if (!window.confirm('删除全部长期记忆（含已归档记忆）？聊天记录及备份文件保留。')) return;
+      if (!window.confirm(I18n.text('删除全部长期记忆（含已归档记忆）？聊天记录及备份文件保留。'))) return;
       await this.request('clearMemories'); this.edit(); await this.list();
       this.feedback('#mEditFeedback', '长期记忆已清除', 'ok');
     }, '#mEditFeedback');
@@ -199,4 +203,8 @@ const MemoryUI = {
 
 if (window.dataAPI) {
   MemoryUI.initManager();
+  window.dataAPI.onLocale(locale => {
+    I18n.apply(locale);
+    MemoryUI.run(() => memoryElement('#historyPanel').hidden ? MemoryUI.list() : MemoryUI.history());
+  });
 }

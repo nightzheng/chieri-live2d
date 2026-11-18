@@ -80,6 +80,10 @@ test('R06 reminder survives migration and restore, portable import starts paused
 });
 
 test('chat parser only matches explicit reminder syntax', () => {
+  const english = parseReminder('Remind me tomorrow at 09:00 to call home.', Date.UTC(2026, 10, 18), 'Asia/Shanghai');
+  assert.equal(english.title, 'call home');
+  assert.equal(english.day, '2026-11-19');
+  assert.equal(english.time, '09:00');
   assert.equal(parseReminder('明天十点开会。', now, zone), null);
   assert.equal(parseReminder('千绘莉，晚上九点提醒我休息。', now, zone).time, '21:00');
   assert.equal(parseReminder('明天十点提醒我开会。', now, zone).day, '2026-11-17');

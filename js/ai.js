@@ -52,7 +52,7 @@ const OLD_PERSONAS = ['雪村千绘莉，大家叫她千绘莉。一个有着灰
 
 const DEFAULT_SETTINGS = {
   preset: 'deepseek', kind: 'openai', baseUrl: AI_PRESETS.deepseek.baseUrl, apiKey: '', model: AI_PRESETS.deepseek.model,
-  name: '千绘莉', persona: DEFAULT_PERSONA, aiChat: true, aiReact: true,
+  name: '千绘莉', persona: DEFAULT_PERSONA, locale: 'zh-CN', aiChat: true, aiReact: true,
   bubbleOnly: false, // chat without the message list: just an input box, her replies in the speech bubble
   bg: 'auto',        // stage background: auto | day | night | plain (applyBg in ui.js)
   sleepAfter: 180,   // seconds without mouse movement before she dozes off (0 = never)
@@ -123,7 +123,8 @@ ${s.persona}
 - action 取值之一：${act}
 - affection：这件事让你对对方的好感变化，-0.2 到 0.2 之间的小数。${ja ? `
 - ja：reply 里说出口的话的日语版（自然的口语，保持角色语气，自称「私」，用です・ます体），不含（）里的神态描写，不加注音。` : ''}
-当前状态：好感 ${Math.round(state.aff * 100)}/100，不满 ${Math.round(Math.min(1, state.ang) * 100)}/100${state.mood ? '，' + state.mood : ''}。`;
+当前状态：好感 ${Math.round(state.aff * 100)}/100，不满 ${Math.round(Math.min(1, state.ang) * 100)}/100${state.mood ? '，' + state.mood : ''}。` +
+      (I18n.locale === 'en' ? '\nWrite the reply field in natural English, including stage directions. Keep JSON keys and enum values unchanged. If requested, still write the ja field in Japanese.' : '');
   },
 
   // one round trip; resolves to {reply, emotion, action, affection, ja} or throws

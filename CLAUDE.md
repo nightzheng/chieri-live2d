@@ -56,7 +56,7 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
   - **测试时别动用户的真实设置**：给 electron 加 `--user-data-dir=<临时目录>`（设 `APPDATA` 环境变量没用，Electron 不看它）；`LOCALAPPDATA` 环境变量则能把本地语音环境目录 `chieri-tts` 指到别处。
 - **打包**：`npm run dist` → `dist/千绘莉-完整版-Setup-<版本>.exe`（带 `voice/` 模型，约 1.2 GB，打包约 10 分钟；压缩用 normal，maximum 要压很久还几乎不变小）；`npm run dist:lite` → `dist/千绘莉-在线版-Setup-<版本>.exe`（不带模型）。版本号取自 `package.json`，改版本时 `package-lock.json` 顶部两处一起改。electron-builder，NSIS，仅 x64，中文安装界面。两个配置（`build/full.config.js`、`build/lite.config.js`）都从 `package.json` 的 `build` 继承：`build.files` 决定装进去哪些文件，新增资源目录要加到那里；`voice/` 走完整版的 `extraResources`，装到 `resources/voice`。NSIS 安装包上限约 2 GB，所以 Python 环境和 PyTorch 不能打进去，由程序在用户机器上安装。
 - 安装包里的 `build.files` 已经包含 `img/**` 和托盘图标；新增图片目录时别忘了加。
-- 没有自动化测试。改完要实际看画面：用预览/截图检查，拖一拖相关部位，再看 `S.opt.mesh` 下网格是否撕裂。
+- 用 `npm test` 跑 SQLite、日程、主动互动和视觉逻辑测试。Windows 集成检查用 `tests/settings-ui-smoke.cjs` 和 `tests/assistant-smoke.cjs`，安装目录用 `tests/installer-location-smoke.ps1`。测试使用隔离的配置和库。涉及动作时再实际看画面：用预览/截图检查，拖一拖相关部位，再看 `S.opt.mesh` 下网格是否撕裂。
   - 预览面板在后台时 requestAnimationFrame 几乎不跑（2 秒只走 0.1 秒），动画会像卡住一样。要看某个时刻，就在页面里手动推进：循环调用 `simulate(dt/3)` 三次 + `render(dt)`，再截图。
   - 语音的整条链路可以不接真服务来测：起一个本地 mock（`/v1/audio/speech` 返回一段 WAV，带 CORS 头），把 OpenAI 兼容引擎的地址指过去，看它收到的文字（中文 / 日语、神态描写有没有去掉）。本地模型（`chieri_server.py`）只能在有 Python 环境的机器上测，最好有 NVIDIA 显卡。
 
@@ -111,7 +111,7 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
 - **好感满的特别动作**：`ANIMS.love`。`please()` 让 `aff` 到 1 时置 `S.lovePending`，`frame()` 等没有拖拽 / 拎起时开始；`aff` 掉到 0.85 以下才会再次触发（`loveArmed`）。台词组 `loveMax`，身后的光和大爱心画在 `drawUnder`（`S.loveGlow`），爱心圈是 `heartBurst()`。
 - **加语音引擎**：在 `TTS_ENGINES` 加一项（`fields` 自动生成设置项）、`DEFAULT_TTS` 加默认值、`Voice.request` 里拼请求；有 `apiKey` 字段的会被主进程自动加密保存。本地类的引擎标 `local: true`。
 - **改某个部位的反应**：点击在 `TAPS`，拖拽在 `DRAGS`（都在 `app.js`），按下 / 移动 / 抬起分别在 `onDown` / `onMove` / `onUp`。部位范围在 `config.js` 的 `zones`、`ears`、`strands`、`tail`、`crown`。
-- **加待机小动作**：`ANIMS`（时间轴函数，`u` 是动作内的秒数，用 `env()` 做淡入淡出），`idleAnim` 随机挑；录制模式的数字键映射在 `REC_ACTS`。
+- **加待机小动作**：`ANIMS`（时间轴函数，`u` 是动作内的秒数，用 `env()` 做淡入淡出），`idleMoment` 配对动作和语气词，由同一个随机间隔触发；录制模式的数字键映射在 `REC_ACTS`。
 - **调头发 / 尾巴手感**：发束的 `k`（刚度）、`r` / `f`（影响范围）；摆动和风在 `simulate` 的「hair pendulums」段；尾巴节奏在「tail」段。改了 `poly` / `torso` 一定要在两个姿势下都打开网格拖一拖。
 - **加一个姿势**：在 `POSES` 加一项（立绘、差分套、`M`、全部部位坐标），`M` 用 `tools/align.html` 求；面板按钮会自动出现。工作量主要在描 `strands[].poly` 和 `zones`。
 - **AI**：提示词在 `AI.systemPrompt`，模型必须只回一个 JSON：`{reply, emotion, action, affection}`（要日语语音时再加 `ja`）；`AI.parse` 容错（找不到 JSON 就把整段当台词）。可选表情 `AI_EMOTIONS`、动作 `AI_ACTIONS`（落到 `doAction`）。新增服务商在 `AI_PRESETS`。桌面版请求从主进程发（`ai:request`），所以没有 CORS 问题。
@@ -126,7 +126,14 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
 - 桌宠窗口：只有她身上的像素挡鼠标，透明处由页面实时 `setIgnoreMouse` 放行；菜单只在悬停时显示；只有按住菜单条才能拖动（直接拖身体是互动，不是搬窗口）。对话和设置会把窗口往左加宽一栏，不能盖住她（「隐藏聊天栏」时这一栏里只有底部的输入框）。
 - 录制模式（F8）：她不再自己做小动作、不睡着，每个互动只说每组第一句，方便按分镜拍；桌面版还会注册 Ctrl+Alt+键 的全局快捷键（只在录制模式开着时占用）。
 - 用户的语言是中文；界面文字、台词、文档都用中文（README 另有英文版 `README.en.md`）。代码注释用英文。
-- 代码在 GitHub 上：公开仓库 https://github.com/lizitc/chieri-live2d 。本地目录不是 git 仓库，开发机上也没有 git；推送用 `tools/github-push.js`，推送前先 `--dry` 看一眼文件列表。仓库是公开的，`.gitignore` 里列的私有文件（token、模型包等）绝不能进去。
+- 此工作区的 Git 远程是 `nightzheng/chieri-live2d`。大体积模型和密钥等私有文件按 `.gitignore` 排除。
+
+## 当前功能
+
+- 中英文界面与固定台词在 `js/i18n-en.js`，日语声线仍走 `js/lines_ja.js`。界面语言随设置保存，聊天原文不做回填翻译。
+- 桌面 SQLite 保存聊天、长期记忆和提醒。默认按本地规则自动保存，AI 辅助可在旧消息移出上下文时提取。迁移前生成一致性快照。
+- 主动闲聊支持自适应间隔和屏幕授权。日常动作与语气词同步触发。NSIS 支持识别已有安装目录，正式覆盖安装和真实服务按需在隔离环境复测。
+- 中英文 README 记录当前用法，版本变更和测试细节可查 Git 历史。
 
 ## 历史：用户明确要求过 / 否决过的事
 

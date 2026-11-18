@@ -86,6 +86,12 @@ function validate(value) {
 
 function parseReminder(input, now, zone) {
   if (typeof input !== 'string' || input.length > 300) return null;
+  const english = /^(?:Chieri,?\s+)?(?:please\s+)?remind me(?:\s+(today|tomorrow|every day|on weekdays))?\s+at\s+(\d{1,2}):(\d{2})\s+to\s+(.+)$/iu.exec(input.trim());
+  if (english) {
+    const [, day, hour, minute, content] = english;
+    const when = { today: '今天', tomorrow: '明天', 'every day': '每天', 'on weekdays': '工作日' }[day?.toLowerCase()] || '';
+    return parseReminder(`${when}${hour}:${minute}提醒我${content.replace(/\.$/, '')}`, now, zone);
+  }
   const match = /^(?:千绘莉[，,、\s]*)?(?:请)?(?:(今天|明天|后天|每天|工作日|每周[日天一二三四五六])\s*)?(早上|上午|中午|下午|晚上)?\s*([\d零〇一二两三四五六七八九十]{1,3})(?:[点时]([\d零〇一二两三四五六七八九十]{1,3}分?|半)?|[:：](\d{2}))\s*提醒我(.+)$/u.exec(input.trim());
   if (!match) return null;
   const [, when, period, h, mn, colon, message] = match;

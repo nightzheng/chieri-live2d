@@ -9,7 +9,7 @@ if (DESKTOP) document.documentElement.classList.add('desktop');
 let toastTimer = 0;
 // mood: a sticker of her beside the message (happy / pout / think / shy, img/st_*.png)
 function toast(msg, ms = 2600, mood = '') {
-  const t = $('#toast'); t.lastElementChild.textContent = msg; t.classList.toggle('mood', !!mood);
+  const t = $('#toast'); t.lastElementChild.textContent = I18n.text(msg); t.classList.toggle('mood', !!mood);
   if (mood) t.firstElementChild.src = `img/st_${mood}.png`;
   t.classList.remove('on'); void t.offsetWidth; t.classList.add('on');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), ms);
@@ -41,8 +41,11 @@ const Chat = {
   // a sticker beside a short note, for the greeting and for errors (never saved); link: [text, onclick]
   card(mood, text, link) {
     const el = this.add('sys', '', false), img = new Image(), p = document.createElement('span');
-    el.classList.add('card', mood); img.src = `img/st_${mood}.png`; img.alt = ''; p.textContent = text;
-    if (link) { const a = document.createElement('a'); a.textContent = link[0]; a.onclick = link[1]; p.append(a); }
+    el.classList.add('card', mood); img.src = `img/st_${mood}.png`; img.alt = '';
+    const caption = document.createElement('span');
+    I18n.label(caption, text);
+    p.append(caption);
+    if (link) { const a = document.createElement('a'); I18n.label(a, link[0]); a.onclick = link[1]; p.append(a); }
     el.append(img, p); this.scroll(); return el;
   },
   // her "thinking" sticker with typing dots, while the AI answers
@@ -54,7 +57,7 @@ const Chat = {
     $('#msgs').append(el); this.scroll();
   },
   scroll() { const m = $('#msgs'); m.scrollTop = m.scrollHeight; },
-  status(text, busy) { const s = $('#chatStatus'); s.textContent = text; s.classList.toggle('busy', !!busy); },
+  status(text, busy) { const s = $('#chatStatus'); I18n.label(s, text); s.classList.toggle('busy', !!busy); },
   async reload() {
     $('#msgs').replaceChildren();
     await this.restore();
@@ -82,7 +85,7 @@ const Chat = {
     if (!this.log.length) this.hello();
   },
   hello() {
-    if (AI.ready()) this.card('happy', `已连接 ${AI_PRESETS[Store.data.preset] ? AI_PRESETS[Store.data.preset].label : 'AI'} · ${Store.data.model}`);
+    if (AI.ready()) this.card('happy', `${I18n.pick('已连接', 'Connected to')} ${I18n.text(AI_PRESETS[Store.data.preset]?.label || 'AI')} · ${Store.data.model}`);
     else this.card('happy', '还没有配置 AI，她只会说固定台词。', ['去设置', () => Settings.open()]);
   },
   async persist(who, text, conversation) {
@@ -149,7 +152,7 @@ const Chat = {
   },
   async clear() {
     if (this.sending) return toast('请等待当前对话结束');
-    if (!window.confirm('清除全部聊天记录？长期记忆保留。')) return;
+    if (!window.confirm(I18n.text('清除全部聊天记录？长期记忆保留。'))) return;
     if (DESKTOP) {
       this.sending = true;
       try { await window.petAPI.memory('clearHistory'); }
@@ -164,6 +167,13 @@ const Chat = {
 
 // without an AI configured: a few keyword answers, otherwise a gentle shrug
 function localReply(text) {
+  if (I18n.locale === 'en') {
+    if (/\b(?:hello|hi|hey|good morning)\b|你好/i.test(text)) return { reply: 'Hello! I was just about to say hi.', emotion: 'smile', ja: 'こんにちは。私から挨拶しようと思っていたところです。' };
+    if (/\b(?:good night|sleep|tired)\b|晚安/i.test(text)) return { reply: 'Good night. Get some proper rest, all right?', emotion: 'sleepy', ja: 'おやすみなさい。ゆっくり休んでくださいね。' };
+    if (/\b(?:cute|like you|love you)\b|可爱/i.test(text)) return { reply: 'W-well, it’s not like that made me happy or anything.', emotion: 'shy', ja: 'べ、別にうれしくなんかないですから。' };
+    if (/your name|who are you|你是谁/i.test(text)) return { reply: `I'm ${I18n.text(Store.data.name)}.`, emotion: 'smile', ja: `${Voice.jaName()}です。` };
+    return { reply: 'Mm-hm. Tell me a little more?', emotion: 'curious', ja: 'うんうん。もう少し聞かせてくれますか？' };
+  }
   const R = [
     [/你好|hi|hello|嗨|在吗/i, ['你好呀～', '在的在的！'], 'smile'],
     [/可爱|喜欢|爱你|好看|漂亮/, ['才、才没有很开心呢！', '嘿嘿…被夸了♪'], 'shy'],
@@ -185,7 +195,11 @@ const Settings = {
   open() {
     if (!$('#settings').classList.contains('hidden')) return;
     const s = Store.data, sel = $('#sPreset');
-    sel.innerHTML = Object.entries(AI_PRESETS).map(([k, p]) => `<option value="${k}">${p.label}</option>`).join('');
+    sel.replaceChildren(...Object.entries(AI_PRESETS).map(([key, preset]) => {
+      const option = new Option('', key);
+      I18n.label(option, preset.label);
+      return option;
+    }));
     sel.value = AI_PRESETS[s.preset] ? s.preset : 'custom';
     $('#sBase').value = s.baseUrl; $('#sKey').value = s.apiKey; $('#sModel').value = s.model;
     this.maskKey($('#sKey'), $('#sKeyShow'));
@@ -209,14 +223,15 @@ const Settings = {
   },
   maskKey(input, button, visible = false) {
     input.type = visible ? 'text' : 'password';
-    button.textContent = visible ? '隐藏' : '显示';
+    I18n.label(button, visible ? '隐藏' : '显示密钥');
+    if (!visible && I18n.locale !== 'en') button.textContent = '显示';
     button.setAttribute('aria-pressed', String(visible));
   },
   feedback(selector, message = '', tone = '') {
     const node = $(selector);
     node.classList.add('action-status');
     node.dataset.tone = tone;
-    node.textContent = message ? (tone === 'ok' ? '成功 · ' : tone === 'error' ? '异常 · ' : '') + message : '';
+    node.textContent = message ? (tone === 'ok' ? I18n.text('成功') + ' · ' : tone === 'error' ? I18n.text('异常') + ' · ' : '') + I18n.text(message) : '';
   },
   value(key) {
     if (key === 'regular') return this.read();
@@ -266,7 +281,7 @@ const Settings = {
   close(saved = false) {
     if ($('#settings').classList.contains('hidden') || this.loading || (this.saving && !saved)) return;
     if (!saved && Object.keys(this.baseline).some(key => this.changed(key)) &&
-        !window.confirm('还有未保存的设置，放弃修改并关闭？')) return;
+        !window.confirm(I18n.text('还有未保存的设置，放弃修改并关闭？'))) return;
     if (DESKTOP && VisionUI.token) VisionUI.stop();
     $('#settings').classList.add('hidden'); petSide();
     this.baseline = {};
@@ -343,7 +358,11 @@ const VoiceUI = {
   draft: null, eng: 'off',
   open() {
     const d = this.draft = JSON.parse(JSON.stringify(Store.data.tts));
-    $('#vEngine').innerHTML = Object.entries(TTS_ENGINES).filter(([k]) => Voice.allowed(k)).map(([k, e]) => `<option value="${k}">${e.label}</option>`).join('');
+    $('#vEngine').replaceChildren(...Object.entries(TTS_ENGINES).filter(([k]) => Voice.allowed(k)).map(([k, e]) => {
+      const option = new Option('', k);
+      I18n.label(option, k === 'off' ? '不使用语音' : e.label);
+      return option;
+    }));
     this.eng = Voice.allowed(d.engine) ? d.engine : 'off'; $('#vEngine').value = this.eng;
     $('#vVol').value = d.volume; $('#vVolOut').textContent = Math.round(d.volume * 100) + '%';
     $('#vChat').checked = d.chat; $('#vReact').checked = d.react;
@@ -361,8 +380,11 @@ const VoiceUI = {
         ? `<label class="f"><span>${label}</span><span class="pw"><input data-vk="${k}" type="password" placeholder="${ph}" spellcheck="false" autocomplete="off"><button type="button" class="mini" data-show-key>显示</button></span></label>`
         : `<label class="f"><span>${label}</span><input data-vk="${k}" type="${type || 'text'}" placeholder="${ph}" spellcheck="false" autocomplete="off"></label>`).join('');
     box.querySelectorAll('[data-vk]').forEach(el => { el.value = c[el.dataset.vk] != null ? c[el.dataset.vk] : ''; });
+    for (const node of box.querySelectorAll('label > span:first-child, option')) I18n.label(node, node.textContent);
+    for (const node of box.querySelectorAll('[placeholder]')) node.placeholder = I18n.text(node.placeholder);
     box.querySelectorAll('[data-show-key]').forEach(button => {
       const input = button.previousElementSibling;
+      Settings.maskKey(input, button);
       button.onclick = () => Settings.maskKey(input, button, input.type === 'password');
     });
     const preset = box.querySelector('[data-vk=preset]');
@@ -370,7 +392,7 @@ const VoiceUI = {
     $('#vChieri').classList.toggle('hidden', this.eng !== 'chieri');
     const off = '选一个语音引擎，她说的话就会读出来。' + (Voice.caps.local ? '' : DESKTOP
       ? '这是在线版，只能用在线语音服务；千绘莉的本地声线模型在完整版里。' : '网页版只能用在线服务（可能被跨域策略拦截），本地模型请用桌面完整版。');
-    $('#vNote').textContent = this.eng === 'off' ? off : e.note || '';
+    $('#vNote').textContent = this.eng === 'off' ? I18n.pick(off, 'Choose a voice engine to read dialogue aloud.') : I18n.text(e.note || '');
     if (this.eng === 'chieri') this.env();
   },
   // the dialog back into the draft
@@ -460,9 +482,24 @@ const VoiceUI = {
 };
 
 function applyNames() {
-  const n = Store.data.name;
+  const n = Store.data.name === '千绘莉' ? I18n.text('千绘莉') : Store.data.name;
   $('#charName').textContent = n; $('#chatName').textContent = n; document.title = n;
   document.documentElement.classList.toggle('bubble-only', !!Store.data.bubbleOnly);
+}
+
+function applyLanguage(locale) {
+  Store.data.locale = locale;
+  I18n.apply(locale);
+  applyNames();
+  if (DESKTOP) {
+    MemoryUI.modeHelp();
+    $('#pFrequency').onchange();
+  }
+  renderRecKeys();
+  if (VoiceUI.draft) { VoiceUI.pull(); VoiceUI.render(); }
+  for (const [input, btn] of [['#sKey','#sKeyShow'], ['#visKey','#visKeyShow']]) {
+    Settings.maskKey($(input), $(btn), $(input).type === 'text');
+  }
 }
 
 // ---------------------------------------------------------------- desktop pet window
@@ -499,8 +536,11 @@ function recToggle() {
   toast(Rec.on ? '录制模式已开启 · 按 H 收起快捷键表' : '录制模式已关闭');
 }
 function recKey(k) { const a = REC_ACTS[k] || REC_UI[k]; if (a && Rec.on && pose) a[1](); }
+function renderRecKeys() {
+  $('#recKeys').innerHTML = Object.entries({ ...REC_ACTS, ...REC_UI }).map(([k, [label]]) => `<kbd>${k}</kbd><span>${I18n.text(label)}</span>`).join('');
+}
 function initRec() {
-  $('#recKeys').innerHTML = Object.entries({ ...REC_ACTS, ...REC_UI }).map(([k, [label]]) => `<kbd>${k}</kbd><span>${label}</span>`).join('');
+  renderRecKeys();
   $('#optRec').onchange = () => { if ($('#optRec').checked !== Rec.on) recToggle(); };
   window.addEventListener('keydown', e => {
     if (e.key === 'F8') { e.preventDefault(); recToggle(); return; }
@@ -577,6 +617,16 @@ function initPet() {
 }
 
 function initUI() {
+  $('#languageToggle').onclick = async event => {
+    const button = event.currentTarget, locale = I18n.pick('en', 'zh-CN');
+    button.disabled = true;
+    try {
+      if (DESKTOP) await window.petAPI.setLocale(locale);
+      else await Store.save({ locale }, true);
+      applyLanguage(locale);
+    } catch (_) { toast('无法保存语言设置', 3000, 'pout'); }
+    finally { button.disabled = false; }
+  };
   applyNames(); applyBg(); setInterval(applyBg, 60000);
   document.querySelectorAll('#bgBtns button').forEach(b => b.onclick = () => { Store.save({ bg: b.dataset.bg }); applyBg(); });
   $('#btnChat').onclick = () => Chat.toggle();
@@ -614,6 +664,7 @@ function initUI() {
   Chat.restore().finally(() => { Chat.sending = false; });
   initRec();
   if (DESKTOP) {
+    window.petAPI.onLocale(applyLanguage);
     window.petAPI.onHistoryChanged(async () => {
       while (Chat.sending) await new Promise(resolve => setTimeout(resolve, 100));
       await Chat.reload();

@@ -34,6 +34,9 @@ function delay(options, random) {
 
 function command(text) {
   if (typeof text !== 'string') return null;
+  const english = text.trim().replace(/^chieri,?\s+/i, '').replace(/[.!]+$/, '').toLowerCase();
+  if (/^(?:please )?(?:do not disturb|don't disturb me|be quiet)(?: now)?$/.test(english)) return { mode: 'quiet', minutes: 60 };
+  if (/^(?:you can chat with me(?: now)?|resume chatting)$/.test(english)) return { mode: 'normal', minutes: 0 };
   const line = text.trim().replace(/^千绘莉[，、,\s]*/, '').replace(/[。！!]+$/, '');
   if (/^(?:现在)?(?:请)?(?:别打扰我|不要打扰我|安静一下)$/.test(line)) return { mode: 'quiet', minutes: 60 };
   if (/^(?:可以陪我聊聊天|恢复陪伴|可以聊天了)$/.test(line)) return { mode: 'normal', minutes: 0 };

@@ -12,7 +12,7 @@ const { SCHEMA: AGENDA_SCHEMA } = require('./agenda');
 const MAX_TEXT = 4000;
 const TYPES = ['事实', '偏好', '兴趣', '事项', '约定', '关系', '其他'];
 const SOURCES = ['manual', 'explicit', 'candidate', 'import'];
-const SENSITIVE = /密码|口令|令牌|访问密钥|私钥|身份证|护照|银行卡|信用卡|账户号码|银行账户|病历|诊断|处方|过敏|患病|手术|病症|医疗|糖尿病|高血压|抑郁症|癌症|病史|password|passphrase|secret|api[ _-]?key|access[ _-]?token|\bbearer\b|\bsk-[\w-]{8,}|\b\d{15,18}[Xx]?\b/i;
+const SENSITIVE = /密码|口令|令牌|访问密钥|私钥|身份证|护照|银行卡|信用卡|账户号码|银行账户|病历|诊断|处方|过敏|患病|手术|病症|医疗|糖尿病|高血压|抑郁症|癌症|病史|password|passphrase|secret|api[ _-]?key|access[ _-]?token|\bbearer\b|\bsk-[\w-]{8,}|\b\d{15,18}[Xx]?\b|\b(?:private key|passport|social security|bank account|credit card|medical record|diagnosis|prescription|allerg(?:y|ic)|surgery|diabetes|cancer)\b/i;
 
 function inputText(value, max = MAX_TEXT, allowEmpty = false) {
   if (typeof value !== 'string' || value.length > max || value.includes('\0') || (!allowEmpty && !value.trim())) {
@@ -31,21 +31,24 @@ const RULE_PATTERNS = {
   experiences: '曾经参加',
   facts: '现居|现在住在|住在|目前的职业是',
 };
+const ENGLISH_PREFERENCE = /^I\s+(?:(?<negative>don['’]t|do not|no longer)\s+)?(?<verb>like|love|prefer|dislike|hate)\s+(?<topic>[^,.;!?]{1,100})\.?$/iu;
 
 function extraction(input, auto, now = Date.now(), rules = RULE_GROUPS) {
   const text = inputText(input).trim();
   if (SENSITIVE.test(text) || FICTION.test(text)) return null;
-  const explicit = /^(?:千绘莉[，,、\s]*)?(?:请)?(?:记住|帮我记住|更正(?:一下)?)[：:，,\s]*(.+)$/u.exec(text);
+  const explicit = /^(?:千绘莉[，,、\s]*)?(?:请)?(?:记住|帮我记住|更正(?:一下)?)[：:，,\s]*(.+)$/u.exec(text) ||
+    /^(?:Chieri,?\s+)?(?:please\s+)?(?:remember(?:\s+that)?\s*[:,]?\s+|correction:\s*)(.+)$/iu.exec(text);
   const content = (explicit ? explicit[1] : text).replace(/[。！？!?]+$/u, '').trim();
   const preference = /^我((?:现在|已经|以前|一直|最)?(?:不再|不|很|特别)?)?(喜欢|喜爱|爱喝|爱吃|偏爱|讨厌)([^，,。；;！？!?]{1,100})$/u.exec(content);
-  const candidate = (preference && rules.includes('preferences')) || Object.entries(RULE_PATTERNS).some(([group, prefixes]) =>
+  const english = ENGLISH_PREFERENCE.exec(content);
+  const candidate = ((preference || english) && rules.includes('preferences')) || Object.entries(RULE_PATTERNS).some(([group, prefixes]) =>
     rules.includes(group) && new RegExp('^我(?:' + prefixes + ')[^，,。；;！？!?]{2,100}$', 'u').test(content));
-  const correction = preference && /不/.test(preference[1] || '');
+  const correction = (preference && /不/.test(preference[1] || '')) || english?.groups.negative;
   if (!content || content.length > 1000 || (!explicit && !correction && (!auto || !candidate))) return null;
   if (preference?.[1]?.startsWith('以前')) return null;
   const expiry = expiryFor(content, now);
   if (expiry && !explicit) return null;
-  return { content, type: preference ? '偏好' : '其他', tags: '',
+  return { content, type: preference || english ? '偏好' : '其他', tags: '',
     source: explicit || correction ? 'explicit' : 'candidate', confidence: explicit || correction ? 1 : 0.75,
     expires_at: expiry, importance: explicit ? 3 : 2 };
 }
@@ -60,6 +63,11 @@ function structuredFact(content) {
     if (match) return { key, stance: normalize(canonical(match[1])) };
   }
   const match = /^我(?:现在|一直|最|已经)?(不再|不)?(?:很|特别)?(喜欢|喜爱|讨厌|偏爱|爱喝|爱吃)\s*(.+)$/u.exec(value);
+  const english = ENGLISH_PREFERENCE.exec(value);
+  if (english) {
+    const { negative, verb, topic } = english.groups;
+    return { key: 'preference:' + normalize(topic), stance: (negative ? 'not-' : '') + (/^(dislike|hate)$/i.test(verb) ? 'dislike' : 'like') };
+  }
   if (!match) return { key: '', stance: '' };
   const topic = normalize(canonical(match[3].replace(/^(?:喝|吃)/, '')));
   return { key: 'preference:' + topic, stance: (match[1] ? 'not-' : '') + (match[2] === '讨厌' ? 'dislike' : 'like') };

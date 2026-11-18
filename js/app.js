@@ -671,10 +671,11 @@ let typing = null, bubbleHide = 0;
 function say(text, sem, dur, opt = {}) {
   if (sem) setFace(sem, dur || Math.max(2.2, text.length * 0.16));
   bubble.classList.remove('hidden');
+  const display = opt.translate === false ? text : I18n.fixed(text);
   let i = 0; clearInterval(typing); bubbleText.textContent = '';
-  typing = setInterval(() => { i++; bubbleText.textContent = text.slice(0, i); if (i >= text.length) clearInterval(typing); }, 55);
-  S.talkUntil = S.t + text.replace(/[…～♪！？\s.]/g, '').length * 0.055 + 0.15;
-  bubbleHide = S.t + Math.max(2.4, text.length * 0.16 + 1.2);
+  typing = setInterval(() => { i++; bubbleText.textContent = display.slice(0, i); if (i >= display.length) clearInterval(typing); }, 55);
+  S.talkUntil = S.t + display.replace(/[…～♪！？\s.]/g, '').length * 0.055 + 0.15;
+  bubbleHide = S.t + Math.max(2.4, display.length * 0.16 + 1.2);
   // spoken aloud: once the audio plays her mouth follows it instead of the typing
   if (opt.voice !== false) Voice.speak(text, opt);
 }
@@ -1498,11 +1499,12 @@ const SLIDERS = [
 ];
 function buildUI() {
   const pb = $('#poseBtns'); pb.innerHTML = '';
-  for (const k in POSES) { const b = document.createElement('button'); b.textContent = POSES[k].name; b.dataset.pose = k; b.onclick = () => switchPose(k); pb.append(b); }
+  for (const k in POSES) { const b = document.createElement('button'); I18n.label(b, POSES[k].name); b.dataset.pose = k; b.onclick = () => switchPose(k); pb.append(b); }
   const sl = $('#sliders'); sl.innerHTML = '';
   for (const [key, label, mn, mx] of SLIDERS) {
     const row = document.createElement('div'); row.className = 'sl';
     row.innerHTML = `<span>${label}</span><input type="range" min="${mn}" max="${mx}" step="0.01" value="${key === 'breath' ? 0.5 : 0}"><span>auto</span>`;
+    I18n.label(row.firstElementChild, label);
     const inp = row.querySelector('input'), val = row.lastElementChild;
     inp.oninput = () => { S.manual[key] = +inp.value; val.textContent = (+inp.value).toFixed(2); touch(); };
     row.reset = () => { delete S.manual[key]; val.textContent = 'auto'; inp.value = key === 'breath' ? 0.5 : 0; };
@@ -1532,7 +1534,7 @@ function buildUI() {
 function refreshExprButtons() {
   const eb = $('#exprBtns'); eb.innerHTML = '';
   for (const sem in pose.cfg.sem) {
-    const b = document.createElement('button'); b.textContent = EXPR_LABELS[sem] || sem;
+    const b = document.createElement('button'); I18n.label(b, EXPR_LABELS[sem] || sem);
     b.onclick = () => { touch(); setFace(sem, 4); if (sem === 'shock') { kick(0.4); emit('surprise', ...headTop(), 1, { size: 30 }); } if (sem === 'happy') emit('heart', ...headTop(), 2); };
     eb.append(b);
   }
@@ -1576,7 +1578,7 @@ setInterval(() => {
 // waits for ui.js, which loads after this file
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    await Store.load(); await Voice.init();
+    await Store.load(); I18n.registerLines(LINES); I18n.apply(Store.data.locale); await Voice.init();
     buildUI(); initUI(); resize();
     let first = new URLSearchParams(location.search).get('pose') || Store.data.pose || 'a';
     if (!POSES[first]) first = 'a';

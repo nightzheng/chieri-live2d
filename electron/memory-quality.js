@@ -1,8 +1,8 @@
 'use strict';
 
 const DAY = 86400000;
-const TEMPORARY = /今天|今晚|明天|后天|这周|本周|下周|这几天|暂时|临时|现在正在|一会儿|这次/;
-const FICTION = /假如|假设|如果我|开玩笑|逗你的|角色扮演|剧本里|虚构|我演的是|比如说/;
+const TEMPORARY = /今天|今晚|明天|后天|这周|本周|下周|这几天|暂时|临时|现在正在|一会儿|这次|\b(?:today|tonight|tomorrow|(?:this|next) week|for now|temporarily|right now|this time)\b/i;
+const FICTION = /假如|假设|如果我|开玩笑|逗你的|角色扮演|剧本里|虚构|我演的是|比如说|\b(?:if I|suppose|pretend|just kidding|role[- ]?play(?:ing)?|hypothetically)\b/i;
 const ALIASES = [
   ['冰美式', '冰美式咖啡', '冰的美式', '冰美式黑咖啡'],
   ['骑行', '骑自行车', '骑单车', '单车运动'],

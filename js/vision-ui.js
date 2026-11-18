@@ -64,8 +64,8 @@ const VisionUI = {
     Settings.maskKey($('#visKey'), $('#visKeyShow'));
     $('#visClearKey').checked = false;
     $('#pvPrivateWords').value = c.privateWords;
-    $('#visKey').placeholder = c.hasKey ? '已加密保存，留空保留' : '';
-    $('#visConfigStatus').textContent = state.configError || (state.supported ? '视觉设置独立于聊天服务' : '当前平台不支持屏幕查看');
+    $('#visKey').placeholder = c.hasKey ? I18n.text('已加密保存，留空保留') : '';
+    I18n.label($('#visConfigStatus'), state.configError || (state.supported ? '视觉设置独立于聊天服务' : '当前平台不支持屏幕查看'));
   },
   async open() {
     try {
@@ -86,7 +86,8 @@ const VisionUI = {
     $('#visQuestion').focus();
   },
   handleChat(text) {
-    if (!/^(?:千绘莉[，,、\s]*)?(?:请|帮我)?(?:看看|看一下|看一眼)(?:我(?:的|现在)?)?(?:屏幕|桌面)/u.test(text)) return false;
+    if (!/^(?:千绘莉[，,、\s]*)?(?:请|帮我)?(?:看看|看一下|看一眼)(?:我(?:的|现在)?)?(?:屏幕|桌面)/u.test(text) &&
+        !/^(?:chieri,?\s+)?(?:please\s+)?(?:look at|check)(?: my| the) (?:screen|desktop)\b/i.test(text)) return false;
     this.show(text);
     return true;
   },
@@ -109,7 +110,7 @@ const VisionUI = {
   async saveOptions(options) {
     this.applyConfig(await this.call('save', options));
     if (options.enabled) await Promise.allSettled(['vis', 'pv'].map(area => this.loadSources(area, undefined, false, true)));
-    $('#visConfigStatus').textContent = '视觉设置已保存';
+    I18n.label($('#visConfigStatus'), '视觉设置已保存');
   },
   async sources(area = 'vis') {
     return this.loadSources(area, undefined, true);

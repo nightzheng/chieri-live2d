@@ -7,7 +7,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { DEFAULTS, INTERVALS, MAX_IMAGE, VisionFlow, validateConfig, parseRequest, isPrivate } = require('./vision');
 const { writeAtomic } = require('./memory-store');
 
-module.exports = function registerVision(trustedWindow, activeWindow, proactivePolicy, chatTarget) {
+module.exports = function registerVision(trustedWindow, activeWindow, proactivePolicy, chatTarget, language = zh => zh) {
   const file = path.join(app.getPath('userData'), 'vision-settings.json');
   const grantFile = path.join(app.getPath('userData'), 'proactive-screen.json');
   const supported = process.platform === 'win32';
@@ -122,7 +122,7 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
     confirming = true;
     try {
       return (await dialog.showMessageBox(win, {
-        type: 'warning', message: text, detail, buttons: ['取消', '同意发送'],
+        type: 'warning', message: text, detail, buttons: [language('取消', 'Cancel'), language('同意发送', 'Allow')],
         defaultId: 0, cancelId: 0, noLink: true,
       })).response === 1;
     } finally { confirming = false; }
@@ -135,8 +135,11 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
       throw new Error('截图周期须短于观察时长');
     }
     const selectedConfig = config;
-    const action = observe ? `观察 ${observe.duration} 分钟，每 ${observe.interval} 分钟截图一次` : '发送这张预览截图';
-    const approved = await confirm(win, action + '？', `范围：${source.name}\n服务：${config.base}\n模型：${config.model}\n请确认画面中没有密码和私人资料。观察期间可随时停止。`);
+    const action = observe ? language(`观察 ${observe.duration} 分钟，每 ${observe.interval} 分钟截图一次？`,
+      `Observe for ${observe.duration} minutes and capture every ${observe.interval} minutes?`) : language('发送这张预览截图？', 'Send the previewed screenshot?');
+    const approved = await confirm(win, action, language(
+      `范围：${source.name}\n服务：${config.base}\n模型：${config.model}\n请确认画面中没有密码和私人资料。观察期间可随时停止。`,
+      `Source: ${source.name}\nService: ${config.base}\nModel: ${config.model}\nCheck that the image contains no passwords or personal data. You can stop at any time.`));
     if (!approved) { flow.stop(); return null; }
     check(win);
     if (config !== selectedConfig) throw new Error('视觉配置已变更，请重新截图');
@@ -202,8 +205,9 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
       const { source } = flow.inspect(win, value?.token);
       const policy = proactivePolicy(), chat = chatTarget(), selected = config;
       if (!policy || !chat) throw new Error('请先保存主动闲聊、AI 台词、看屏幕选项和聊天 API');
-      const approved = await confirm(win, '记住主动观察授权？',
-        `范围：${source.name}\n每 ${policy.visionEvery} 次主动闲聊查看一次\n图片发送到：${config.base}\n简短描述发送到聊天服务：${chat}\n授权在重启后仍有效，可随时撤销。隐私关键词只能过滤窗口标题和识别结果，请避开敏感画面。`);
+      const approved = await confirm(win, language('记住主动观察授权？', 'Remember permission for proactive screen viewing?'), language(
+        `范围：${source.name}\n每 ${policy.visionEvery} 次主动闲聊查看一次\n图片发送到：${config.base}\n简短描述发送到聊天服务：${chat}\n授权在重启后仍有效，可随时撤销。隐私关键词只能过滤窗口标题和识别结果，请避开敏感画面。`,
+        `Source: ${source.name}\nCapture once per ${policy.visionEvery} proactive chats\nImages go to: ${config.base}\nShort descriptions go to: ${chat}\nPermission persists across restarts and can be revoked. Privacy keywords only screen window titles and descriptions. Keep sensitive content out of the shared area.`));
       if (!approved) return null;
       check(win);
       if (selected !== config || chatTarget() !== chat || proactivePolicy()?.visionEvery !== policy.visionEvery) throw new Error('设置已变更，请重新授权');
@@ -221,7 +225,9 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
       check(win);
       if (!['connection', 'image'].includes(mode)) throw new Error('视觉测试类型无效');
       const epoch = flow.generation, selected = config;
-      if (!await confirm(win, mode === 'image' ? '向视觉服务发送合成测试色块？' : '测试视觉服务连接？', config.base)) return null;
+      const message = mode === 'image' ? language('向视觉服务发送合成测试色块？', 'Send a synthetic test image to the vision service?')
+        : language('测试视觉服务连接？', 'Test the vision service connection?');
+      if (!await confirm(win, message, config.base)) return null;
       check(win);
       if (epoch !== flow.generation || selected !== config) throw new Error('视觉测试已取消');
       const image = mode === 'image' ? nativeImage.createFromBitmap(Buffer.alloc(64 * 64 * 4, 255), { width: 64, height: 64 }).toJPEG(70) : null;

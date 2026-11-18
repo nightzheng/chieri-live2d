@@ -7,7 +7,7 @@ const { randomUUID } = require('node:crypto');
 const { Agenda, calendar, nextOccurrence, parseReminder } = require('./agenda');
 const { Proactive, command, quiet } = require('./proactive');
 
-module.exports = function companion({ store, trustedWindow, activeWindow, settings, onSpoken = () => {} }) {
+module.exports = function companion({ store, trustedWindow, activeWindow, settings, onSpoken = () => {}, language = zh => zh }) {
   const reminders = new Agenda(() => store.open());
   const proactive = new Proactive(() => store.open());
   const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -19,7 +19,7 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
 
   function showNotice(event) {
     if (!event.notify || !Notification.isSupported()) return;
-    const notice = new Notification({ title: event.title, body: event.content || '千绘莉的日程提醒' });
+    const notice = new Notification({ title: event.title, body: event.content || language('千绘莉的日程提醒', 'Reminder from Chieri') });
     notifications.set(event.id, notice);
     const cleanup = () => notifications.delete(event.id);
     notice.once('close', cleanup);
@@ -64,9 +64,11 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
     if (next === null) throw new Error('提醒时间已过，请选择未来时间');
     const first = calendar(next, draft.timezone);
     const { response } = await dialog.showMessageBox(win, {
-      buttons: ['取消', '保存提醒'], defaultId: 0, cancelId: 0, message: draft.title,
-      detail: '首次提醒 ' + first.day + ' ' + first.time + ' · ' + draft.timezone +
-        (draft.weekdays ? ' · 重复星期' + [...'日一二三四五六'].filter((_, i) => draft.weekdays & (1 << i)).join('、') : ' · 单次提醒'),
+      buttons: [language('取消', 'Cancel'), language('保存提醒', 'Save reminder')], defaultId: 0, cancelId: 0, message: draft.title,
+      detail: language('首次提醒 ', 'First reminder ') + first.day + ' ' + first.time + ' · ' + draft.timezone +
+        (draft.weekdays ? language(' · 重复星期', ' · Repeats ') +
+          language([...'日一二三四五六'], ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).filter((_, i) => draft.weekdays & (1 << i)).join(language('、', ', '))
+          : language(' · 单次提醒', ' · One-time reminder')),
     });
     if (response !== 1 || win.isDestroyed()) return 'cancelled';
     reminders.save(draft, Date.now(), 'chat');
@@ -136,9 +138,10 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       proactive.temporary(intent.mode, intent.minutes, now);
       if (intent.mode === 'normal') {
         if (options.manual !== 'normal') proactive.configure({ ...options, manual: 'normal' }, now);
-        return '可以聊天了。主动闲聊仍按你的开关和安静时段运行。';
+        return language('可以聊天了。主动闲聊仍按你的开关和安静时段运行。', 'We can chat again. Proactive chat follows your settings and quiet hours.');
       }
-      return '接下来 ' + intent.minutes + ' 分钟暂停普通闲聊，日程提醒照常。';
+      return language('接下来 ' + intent.minutes + ' 分钟暂停普通闲聊，日程提醒照常。',
+        `Proactive chat is paused for ${intent.minutes} minutes. Reminders will still run.`);
     },
     canSpeak(win, id) {
       return delivery?.win === win && delivery.id === id && Date.now() < delivery.expires && win === activeWindow() &&

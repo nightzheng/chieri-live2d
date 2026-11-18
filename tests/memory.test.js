@@ -47,6 +47,10 @@ test('M01–M06: intent, Chinese lookup, restart, correction, deduplication, and
 test('candidate identification requires opt-in and filters common sensitive facts', () => {
   assert.equal(extraction('我喜欢打网球', false), null);
   assert.equal(extraction('我喜欢打网球', true).source, 'candidate');
+  assert.equal(extraction('I like iced coffee.', true).type, '偏好');
+  assert.equal(extraction('Remember that I like iced coffee.', false).source, 'explicit');
+  assert.equal(extraction('Remember that my credit card ends in 0000.', true), null);
+  assert.equal(extraction('I like iced coffee today.', true), null);
   assert.equal(extraction('我喜欢打网球', true, Date.now(), ['goals']), null);
   assert.equal(extraction('记住我喜欢打网球', true, Date.now(), []).source, 'explicit');
   assert.equal(extraction('我听说他喜欢打网球', true), null);

@@ -49,6 +49,10 @@ async function run() {
     assert.equal(web.navigation, 'none');
     assert.ok(web.save);
     assert.ok(web.widths[1] <= web.widths[0] + 1, JSON.stringify(web));
+    await js("document.querySelector('#languageToggle').click(); true");
+    await until(() => js("document.documentElement.lang === 'en'"));
+    assert.equal(await js("JSON.parse(localStorage.getItem('l2d.settings')).locale"), 'en');
+    assert.equal(await js("document.querySelector('#sSave').textContent"), 'Save all');
     console.log('Web settings passed at 375 × 500 without desktop APIs');
     return;
   }
@@ -143,7 +147,7 @@ async function run() {
     await petAPI.memory('append', {who:'bot', text:'旧的测试回答', conversation:'manage-test'});
     document.querySelector('#mManager').click();
   })()`);
-  const manager = await until(() => BrowserWindow.getAllWindows().find(w => w !== win && w.webContents.getURL().endsWith('data-manager.html')));
+  const manager = await until(() => BrowserWindow.getAllWindows().find(w => w !== win && new URL(w.webContents.getURL()).pathname === '/data-manager.html'));
   const data = code => manager.webContents.executeJavaScript(code);
   await until(() => data("document.querySelectorAll('#mList article').length === 12"));
   await data("document.querySelector('#mNext').click()");
@@ -154,6 +158,23 @@ async function run() {
   await until(() => data("!MemoryUI.running && document.querySelectorAll('#mHistory article').length === 1"));
   assert.match(await data("document.querySelector('#mHistory article').textContent"), /原始问句.*旧的测试回答/s);
   await assert.rejects(data("dataAPI.memory('options', {enabled:false})"), /记忆操作来源无效/);
+  await js('Settings.open()');
+  await until(() => js('!Settings.loading'));
+  await js("document.querySelector('#sName').value = '草稿'; document.querySelector('#languageToggle').click(); true");
+  await until(() => js("document.documentElement.lang === 'en'"));
+  await until(() => data("document.documentElement.lang === 'en'"));
+  assert.equal(await js("document.querySelector('#sSave').textContent"), 'Save all');
+  assert.equal(await js("document.querySelector('#sName').value"), '草稿');
+  assert.equal(await js("petAPI.getSettings().then(s => s.locale)"), 'en');
+  assert.equal(await js("localReply('hello').reply"), 'Hello! I was just about to say hi.');
+  await js("Chat.send('hello')");
+  assert.match(await js("document.querySelector('#msgs').textContent"), /Hello! I was just about to say hi/);
+  assert.match(await js("AI.systemPrompt({aff: 0, ang: 0})"), /natural English/);
+  assert.equal(await js("I18n.fixed('耳朵痒痒的…')"), 'My ears tickle…');
+  assert.equal(await data("document.querySelector('#mType option').value"), '事实');
+  assert.match(await data("document.querySelector('#mHistory article').textContent"), /原始问句/);
+  await js("document.querySelector('#languageToggle').click(); true");
+  await until(() => js("document.documentElement.lang === 'zh-CN' && document.querySelector('#sSave').textContent === '保存全部'"));
   console.log(mode + ' settings passed font, navigation, automatic memory saving and management checks');
 }
 

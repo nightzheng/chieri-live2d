@@ -6,7 +6,7 @@ const { app, ipcMain, dialog, shell } = require('electron');
 const { MemoryStore, extraction, writeAtomic, RULE_GROUPS } = require('./memory-store');
 const { configuredRequest, detect } = require('./memory-extraction');
 
-module.exports = function registerMemory(ownsWindow, root, settings, manager) {
+module.exports = function registerMemory(ownsWindow, root, settings, manager, localize = text => text) {
   const configDir = app.getPath('userData');
   const local = process.platform === 'win32' ? process.env.LOCALAPPDATA : app.getPath('appData');
   const defaultDir = path.join(local || path.join(path.dirname(app.getPath('appData')), 'Local'), '千绘莉', 'memory');
@@ -40,7 +40,7 @@ module.exports = function registerMemory(ownsWindow, root, settings, manager) {
     return result.filePaths[0];
   };
   const confirm = async (w, message, detail) => (await dialog.showMessageBox(w, {
-    type: 'warning', buttons: ['取消', '继续'], defaultId: 0, cancelId: 0, message, detail,
+    type: 'warning', buttons: [localize('取消'), localize('继续')], defaultId: 0, cancelId: 0, message: localize(message), detail: localize(detail),
   })).response === 1;
   const propose = text => options.enabled && extraction(text, options.mode !== 'off', Date.now(), options.rules) || null;
   const actions = {
