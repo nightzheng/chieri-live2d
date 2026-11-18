@@ -696,8 +696,8 @@ async function ambientMoment() {
   try {
     if (!await allowed() || !available()) return;
     ambientNext = S.t + 30;
-    const [text, face, animation, ja] = idleMoment();
-    const opt = { kind: 'ambient', ja };
+    const [text, face, animation] = idleMoment();
+    const opt = { kind: 'ambient' };
     const buffer = await Voice.prepareAnimation(text, opt);
     if (!available() || S.lastInput !== userInput || !await allowed() || !available() || S.lastInput !== userInput) return;
     ambientNext = S.t + rand(minutes, minutes * 2) * 60;
@@ -934,12 +934,12 @@ function animFrame(t) {
 }
 function idleMoment() {
   return pick([
-    ['嗯？', 'curious', 'lookAround', 'ん？'],
-    ['哼～哼哼♪', 'enjoy', 'hum', 'ふんふん♪'],
-    ['呼啊～…', 'gentle', 'stretch', 'ふぁぁ……'],
-    ['唔……耳朵有点痒。', 'curious', 'earFlick', 'うぅ、耳がちょっとかゆいです。'],
-    ['尾巴怎么又动啦……', 'gentle', 'tailPlay', 'しっぽがまた動いてます……'],
-    ['嗯嗯～♪', 'happy', 'bounce', 'ふふっ♪'],
+    ['嗯？', 'curious', 'lookAround'],
+    ['哼～哼哼♪', 'enjoy', 'hum'],
+    ['呼啊～…', 'gentle', 'stretch'],
+    ['唔……耳朵有点痒。', 'curious', 'earFlick'],
+    ['尾巴怎么又动啦……', 'gentle', 'tailPlay'],
+    ['嗯嗯～♪', 'happy', 'bounce'],
   ]);
 }
 
