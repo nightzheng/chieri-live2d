@@ -175,7 +175,7 @@ const VisionUI = {
   },
   async remember() {
     const content = this.latest.slice(0, 1000);
-    if (!content || !window.confirm('把以下文字保存为长期记忆？\n\n' + content)) return;
+    if (!content) return;
     await window.petAPI.memory('save', { content, type: '其他', tags: '视觉 · 用户确认' });
     this.report('已保存到长期记忆', 'ok');
   },

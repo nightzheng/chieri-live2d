@@ -86,12 +86,13 @@ async function run() {
   await until(() => js("document.querySelector('[data-section=desktopSettings]').getAttribute('aria-current') === 'location'"));
   await js("document.querySelector('#settings .body').scrollTop = 0; true");
   await until(() => js("document.querySelector('[data-section=aiSettings]').getAttribute('aria-current') === 'location'"));
-  assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('主动说')"), true);
+  assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('直接保存')"), true);
   await js("document.querySelector('#mAuto').value = 'ai'; document.querySelector('#mAuto').dispatchEvent(new Event('change'))");
   assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('三条')"), true);
   await js("document.querySelector('#mAuto').value = 'rules'; document.querySelector('#mAuto').dispatchEvent(new Event('change'))");
-  assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('才保存')"), true);
-  assert.equal(await js("petAPI.memory('status').then(s => s.mode)"), 'off');
+  assert.equal(await js("document.querySelector('#mModeHelp').textContent.includes('直接保存')"), true);
+  assert.equal(await js("petAPI.memory('status').then(s => s.mode)"), 'rules');
+  await js("document.querySelector('[data-memory-rule][value=habits]').checked = false");
   await js("window.confirm = () => false; Settings.close(); true");
   assert.equal(await js("document.querySelector('#settings').classList.contains('hidden')"), false);
   await js(`document.querySelector('#sAmbient').value = '15';
@@ -125,9 +126,7 @@ async function run() {
     return {early, due, repeated, disabled};
   })()`);
   assert.deepEqual(ambient, { early: true, due: true, repeated: false, disabled: true });
-  await js("window.confirm = () => false; MemoryUI.propose('我喜欢骑自行车')");
-  assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 0);
-  await js("window.confirm = () => true; MemoryUI.propose('我喜欢骑自行车')");
+  await js("window.confirm = () => { throw new Error('保存记忆不应弹确认'); }; MemoryUI.remember('我喜欢骑自行车')");
   assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 1);
   assert.equal(await js("document.querySelector('#aZone').tagName"), 'SELECT');
   await js(`(async () => {
@@ -147,7 +146,7 @@ async function run() {
   await until(() => data("!MemoryUI.running && document.querySelectorAll('#mHistory article').length === 1"));
   assert.match(await data("document.querySelector('#mHistory article').textContent"), /原始问句.*旧的测试回答/s);
   await assert.rejects(data("dataAPI.memory('options', {enabled:false})"), /记忆操作来源无效/);
-  console.log(mode + ' settings passed font, clipping, navigation and memory confirmation checks');
+  console.log(mode + ' settings passed font, navigation, automatic memory saving and management checks');
 }
 
 run().then(() => app.quit(), error => { console.error(error); app.exit(1); });

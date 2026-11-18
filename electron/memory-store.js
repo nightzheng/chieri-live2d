@@ -480,6 +480,15 @@ class MemoryStore {
     return transaction(db, () => this.put(db, { ...memory, id }, source, confidence));
   }
 
+  saveExtracted(value) {
+    const memory = validateMemory(value);
+    const db = this.open();
+    return transaction(db, () => {
+      if (value.source === 'semantic' && db.prepare('SELECT 1 FROM memories WHERE normalized=?').get(normalize(memory.content))) return null;
+      return this.put(db, { ...memory, id: null }, value.source, value.confidence, value.source !== 'semantic');
+    });
+  }
+
   put(db, value, source, confidence, replaceConflicts = true) {
     this.expire(db, Date.now());
     const previous = value.id && db.prepare('SELECT * FROM memories WHERE id=?').get(value.id);
@@ -545,25 +554,26 @@ class MemoryStore {
       .slice(0, limit).map(({ id, content, type, match, source, confirmed }) => ({ id, content: content.slice(0, 200), type, match, source, confirmed }));
   }
 
-  candidateExcerpts(input) {
-    const eligible = text => !SENSITIVE.test(text) && !TEMPORARY.test(text) && !FICTION.test(text);
-    if (!eligible(input) || /[?？]/.test(input) || input.length < 4 || input.length > 300) return [];
-    const cutoff = Date.now() - 30 * 60000;
-    const rows = this.open().prepare(`SELECT text,created,who FROM messages ORDER BY id DESC LIMIT 8`).all();
-    if (rows[0]?.who !== 'user' || rows[0].text !== input) return [];
-    return rows.filter(row => row.who === 'user' && row.created >= cutoff && row.text.length <= 300 && eligible(row.text))
-      .slice(0, 3).reverse().map(row => row.text);
+  candidateExcerpts(id) {
+    const eligible = text => text.length >= 4 && text.length <= 300 && !/[?？]/.test(text) &&
+      !SENSITIVE.test(text) && !TEMPORARY.test(text) && !FICTION.test(text);
+    const rows = this.open().prepare(`SELECT id,text FROM messages WHERE who='user' AND id BETWEEN 1 AND ? ORDER BY id DESC LIMIT 4`).all(id);
+    if (rows[0]?.id !== id || !eligible(rows[0].text)) return [];
+    return rows.filter(row => eligible(row.text)).slice(0, 3).reverse().map(row => row.text);
   }
 
-  claimExtraction(now) {
+  claimExtraction(now, id) {
     const db = this.open();
-    const key = 'semantic-extraction-budget';
-    const row = db.prepare('SELECT value FROM metadata WHERE key=?').get(key);
-    const recent = (row ? JSON.parse(row.value) : []).filter(at => now - at < DAY);
-    if (recent.length >= 6 || now - (recent.at(-1) ?? -Infinity) < 600000) return false;
-    db.prepare('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
-      .run(key, JSON.stringify([...recent, now]));
-    return true;
+    return transaction(db, () => {
+      const key = 'semantic-extraction-budget';
+      const row = db.prepare('SELECT value FROM metadata WHERE key=?').get(key);
+      const saved = row ? JSON.parse(row.value) : [];
+      const recent = (Array.isArray(saved) ? saved : saved.times).filter(at => now - at < DAY);
+      if (id <= (saved.lastId ?? 0) || recent.length >= 6 || now - (recent.at(-1) ?? -Infinity) < 600000) return false;
+      db.prepare('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+        .run(key, JSON.stringify({ times: [...recent, now], lastId: id }));
+      return true;
+    });
   }
 
   exportMemories() {

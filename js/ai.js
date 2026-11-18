@@ -127,19 +127,29 @@ ${s.persona}
   },
 
   // one round trip; resolves to {reply, emotion, action, affection, ja} or throws
-  async ask(input, state, { remember = true, timeout = 20000 } = {}) {
-    const recent = [];
+  contextStart() {
+    let from = this.history.length;
     let remaining = 6000;
-    for (const msg of this.history.slice(-16).reverse()) {
+    for (let i = from - 1; i >= Math.max(0, this.history.length - 16); i--) {
+      const msg = this.history[i];
       if (msg.content.length > remaining) break;
-      recent.unshift(msg);
+      from = i;
       remaining -= msg.content.length;
     }
-    while (recent[0]?.role === 'assistant') recent.shift();
+    while (this.history[from]?.role === 'assistant') from++;
+    return from;
+  },
+  async ask(input, state, { remember = true, timeout = 20000, messageId } = {}) {
+    const from = this.contextStart();
+    if (remember && messageId && from) {
+      const dropped = this.history.slice(0, from).filter(msg => msg.role === 'user' && msg.id > 0).map(msg => msg.id).reverse();
+      if (dropped.length) window.petAPI.memory('semantic', dropped).catch(() => {});
+    }
+    const recent = this.history.slice(from).map(({ role, content }) => ({ role, content }));
     const msgs = [...recent, { role: 'user', content: input }];
     const sys = this.systemPrompt(state) + '\n如果当前对话和资料都没有提供过去的细节，直接承认不记得。';
     const out = this.parse(await this.complete(sys, msgs, { timeout, maxTokens: 500, temperature: 0.9, memory: remember }));
-    if (remember) { this.history.push({ role: 'user', content: input }, { role: 'assistant', content: JSON.stringify(out) }); this.history = this.history.slice(-24); }
+    if (remember) { this.history.push({ id: messageId, role: 'user', content: input }, { role: 'assistant', content: JSON.stringify(out) }); this.history = this.history.slice(-24); }
     return out;
   },
   // a line of hers in Japanese, for a voice that only speaks Japanese

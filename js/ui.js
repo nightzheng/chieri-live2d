@@ -77,7 +77,8 @@ const Chat = {
     }
     for (const m of this.log) this.add(m.who, m.text, false);
     // the model gets the recent conversation back as context
-    AI.history = this.log.slice(-16).map(m => ({ role: m.who === 'user' ? 'user' : 'assistant', content: m.who === 'user' ? m.text : JSON.stringify({ reply: m.text }) }));
+    AI.history = this.log.slice(-16).map(m => ({ id: m.id, role: m.who === 'user' ? 'user' : 'assistant',
+      content: m.who === 'user' ? m.text : JSON.stringify({ reply: m.text }) }));
     if (!this.log.length) this.hello();
   },
   hello() {
@@ -86,7 +87,7 @@ const Chat = {
   },
   async persist(who, text, conversation) {
     if (!DESKTOP) return;
-    try { await window.petAPI.memory('append', { who, text, conversation }); }
+    try { return await window.petAPI.memory('append', { who, text, conversation }); }
     catch (_) { this.card('pout', '上一条消息未写入聊天数据库。'); }
   },
   async send(text) {
@@ -107,7 +108,7 @@ const Chat = {
     if (DESKTOP && VisionUI.handleChat(text)) return;
     const conversation = DESKTOP ? crypto.randomUUID() : null;
     touch(); this.add('user', text);
-    await this.persist('user', text, conversation);
+    const messageId = await this.persist('user', text, conversation);
     if (DESKTOP) {
       try {
         const reminder = await CompanionUI.call('schedule', text);
@@ -120,7 +121,7 @@ const Chat = {
           '保存提醒失败。请在「提醒与日程」检查时间和数据库。');
         return;
       }
-      await MemoryUI.propose(text);
+      await MemoryUI.remember(text);
     }
     S.look = { x: PET ? 0 : -0.35, y: 0.5, until: S.t + 2 };
     if (!Store.data.aiChat || !AI.ready()) {
@@ -134,7 +135,7 @@ const Chat = {
     const id = ++AI.seq; AI.lastAt = S.t;
     setFace('curious', 30); twitchEars(); think(); this.status('正在输入…', true); this.typing(true);
     try {
-      const o = await AI.ask(text, aiState(), { remember: true, timeout: 45000 });
+      const o = await AI.ask(text, aiState(), { remember: true, timeout: 45000, messageId });
       // with a voice the reply waits (a little) for its audio, so words and voice start together
       if (id === AI.seq) await Voice.prepare(o.reply, { ja: o.ja, kind: 'chat' }, 10000);
       this.typing(false); this.add('bot', o.reply);

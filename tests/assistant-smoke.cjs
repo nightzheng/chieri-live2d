@@ -26,7 +26,7 @@ Object.defineProperty(performance, 'now', { value: () => realNow() + clockOffset
 
 let approved = false, shots = 0, sent = 0, failed = false, privateWindow = false, ownWindow, proactiveBody, chatBody;
 const red = Buffer.alloc(96 * 64 * 4, 255);
-const responses = [];
+const responses = [], semanticRequests = [];
 const server = http.createServer((req, res) => {
   let body = '';
   req.setEncoding('utf8');
@@ -40,6 +40,14 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ choices: [{ message: { content: '合成画面的视觉描述' } }] }));
     } else {
       const payload = JSON.parse(body);
+      if (payload.messages[0].content.includes('只提取末句')) {
+        const excerpts = JSON.parse(payload.messages[1].content);
+        semanticRequests.push(excerpts);
+        const evidence = excerpts.at(-1);
+        const content = JSON.stringify({ type: '事项', content: evidence.includes('版画') ? '我要开办版画工作室' : '我要出版一部推理小说',
+          evidence, support: [] });
+        return res.end(JSON.stringify({ choices: [{ message: { content } }] }));
+      }
       const proactive = payload.messages[0].content.includes('这是主动打招呼');
       if (proactive) proactiveBody = payload; else chatBody = payload;
       const output = { reply: proactive ? '生成的测试问候' : '正常聊天回复', emotion: 'happy' };
@@ -206,7 +214,37 @@ async function run() {
   await call('forget');
   assert.equal((await call('state')).savedSource, null);
   assert.equal(fs.existsSync(path.join(profile, 'proactive-screen.json')), false);
-  console.log('Electron passed visual consent, cadence, automatic resume, privacy filtering and grant revocation.');
+  await runJS("petAPI.setSettings({aiChat:true})");
+  await ipc('memory', 'options', { enabled: true, mode: 'ai' });
+  const evidence = '之后有机会我打算出版一部推理小说';
+  await runJS(`(async () => {
+    const content = ${JSON.stringify(evidence)};
+    const id = await Chat.persist('user', content, 'overflow-seed');
+    AI.history = [{id, role:'user', content}, {role:'assistant', content:'好的'}];
+    await Chat.send('继续聊天');
+  })()`);
+  assert.equal(semanticRequests.length, 0);
+  await runJS(`(async () => {
+    const firstTurn = AI.history.slice(0, 2);
+    AI.history = [...firstTurn, ...Array.from({length: 16}, (_, i) => ({role: i % 2 ? 'assistant' : 'user', content:'上下文样本'}))];
+    await Chat.send('再聊一会');
+  })()`);
+  await until(async () => (await ipc('memory', 'list')).some(row => row.source === 'semantic' && row.content.includes('推理小说')));
+  assert.equal(semanticRequests.length, 1);
+  assert.equal(semanticRequests[0].at(-1), evidence);
+  await runJS("Chat.send('再测试一次')");
+  assert.equal(semanticRequests.length, 1);
+  now += 11 * 60000;
+  await runJS(`(async () => {
+    const content = '我打算有机会开办一间版画工作室';
+    const id = await Chat.persist('user', content, 'length-seed');
+    AI.history = [{id, role:'user', content}, {role:'assistant', content:'好的'},
+      {role:'user', content:'甲'.repeat(3000)}, {role:'assistant', content:'乙'.repeat(3000)}];
+    await Chat.send('聊聊别的');
+  })()`);
+  await until(async () => (await ipc('memory', 'list')).some(row => row.source === 'semantic' && row.content.includes('版画')));
+  assert.equal(semanticRequests.length, 2);
+  console.log('Electron passed proactive vision and automatic memory saving at both chat context limits.');
 }
 
 run().then(() => app.quit(), error => { console.error(error); app.exit(1); }).finally(() => server.close());

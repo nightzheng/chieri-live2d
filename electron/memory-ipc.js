@@ -3,8 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, ipcMain, dialog, shell } = require('electron');
-const { randomUUID } = require('node:crypto');
-const { MemoryStore, extraction, writeAtomic, validateMemory, RULE_GROUPS } = require('./memory-store');
+const { MemoryStore, extraction, writeAtomic, RULE_GROUPS } = require('./memory-store');
 const { configuredRequest, detect } = require('./memory-extraction');
 
 module.exports = function registerMemory(ownsWindow, root, settings, manager) {
@@ -19,7 +18,7 @@ module.exports = function registerMemory(ownsWindow, root, settings, manager) {
   const optionsFile = path.join(configDir, 'memory-options.json');
   const modes = ['off','rules','ai'];
   const validRules = rules => Array.isArray(rules) && rules.every(rule => RULE_GROUPS.includes(rule));
-  let options = { enabled: true, mode: 'off', limit: 4, budget: 1400, rules: RULE_GROUPS };
+  let options = { enabled: true, mode: 'rules', limit: 4, budget: 1400, rules: RULE_GROUPS };
   try {
     const value = JSON.parse(fs.readFileSync(optionsFile, 'utf8'));
     options = { ...options, enabled: value.enabled === true, mode: modes.includes(value.mode) ? value.mode : value.auto === true ? 'rules' : 'off',
@@ -29,7 +28,7 @@ module.exports = function registerMemory(ownsWindow, root, settings, manager) {
     if (e.code !== 'ENOENT') options.enabled = false;
   }
   let lastUsed = [];
-  let semantic;
+  let memoryRevision = 0;
   let dialogOpen = false;
   const getStatus = () => ({ ...store.status(), ...options, lastUsed });
   const pickDirectory = async w => {
@@ -57,7 +56,6 @@ module.exports = function registerMemory(ownsWindow, root, settings, manager) {
       fs.mkdirSync(configDir, { recursive: true });
       writeAtomic(optionsFile, next);
       options = next;
-      semantic = undefined;
       if (!options.enabled) lastUsed = [];
       return options;
     },
@@ -67,42 +65,43 @@ module.exports = function registerMemory(ownsWindow, root, settings, manager) {
       lastUsed = [];
       return id;
     },
-    remove: (_, id) => { store.remove(id); lastUsed = lastUsed.filter(row => row.id !== id); },
-    propose: (_, text) => propose(text),
-    async semantic(win, text) {
-      if (!options.enabled || options.mode !== 'ai' || typeof text !== 'string') return null;
-      const excerpts = store.candidateExcerpts(text);
-      if (!excerpts.length) return null;
+    remove: (_, id) => { store.remove(id); memoryRevision++; lastUsed = lastUsed.filter(row => row.id !== id); },
+    async semantic(win, dropped) {
+      if (!options.enabled || options.mode !== 'ai' || !Array.isArray(dropped) || dropped.length > 24 ||
+          !dropped.every(id => Number.isSafeInteger(id) && id > 0)) return null;
+      let id, excerpts;
+      for (const droppedId of dropped) {
+        const messages = store.candidateExcerpts(droppedId);
+        if (!messages.length || propose(messages.at(-1))) continue;
+        id = droppedId;
+        excerpts = messages;
+        break;
+      }
+      if (!excerpts) return null;
       const request = configuredRequest(settings(), excerpts);
-      if (!request || !store.claimExtraction(Date.now())) return null;
-      const policy = options, db = store.open();
+      if (!request || !store.claimExtraction(Date.now(), id)) return null;
+      const policy = options, db = store.open(), revision = memoryRevision;
       try {
         const proposal = await detect(request, excerpts);
-        if (!proposal || options !== policy || win.isDestroyed() || store.open() !== db) return null;
-        validateMemory(proposal);
-        semantic = { win, db, proposal, token: randomUUID(), expires: Date.now() + 300000 };
-        return { ...proposal, token: semantic.token };
+        if (!proposal || options !== policy || revision !== memoryRevision || win.isDestroyed() || store.open() !== db) return null;
+        const remaining = store.candidateExcerpts(id);
+        if (!excerpts.every(text => remaining.includes(text))) return null;
+        return store.saveExtracted(proposal);
       } catch (_) { return null; }
-    },
-    confirmSemantic(win, token) {
-      if (!semantic || semantic.win !== win || semantic.token !== token || semantic.expires <= Date.now() ||
-          !options.enabled || options.mode !== 'ai' || semantic.db !== store.open()) throw new Error('候选已失效');
-      const { proposal } = semantic;
-      semantic = undefined;
-      return store.save(proposal, proposal.source, proposal.confidence);
     },
     remember: (_, text) => {
       const proposed = propose(text);
-      if (!proposed) throw new Error('这条消息不可保存为记忆');
-      return store.save(proposed, proposed.source, proposed.confidence);
+      if (!proposed) return null;
+      const id = store.saveExtracted(proposed);
+      return id ? { id, explicit: proposed.source === 'explicit' } : null;
     },
     legacy: (_, rows) => store.importLegacy(rows),
     append: (_, a) => a?.who === 'bot' && !store.hasConversation(a.conversation) ? null : store.append(a?.who, a?.text, a?.conversation),
     history: (_, a) => store.history(a?.query, a?.before),
     conversations: (_, a) => store.conversations(a?.query, a?.offset),
-    deleteConversation: (_, id) => store.deleteConversation(id),
-    clearHistory: () => store.clearHistory(),
-    clearMemories: () => { store.clearMemories(); lastUsed = []; },
+    deleteConversation: (_, id) => { store.deleteConversation(id); memoryRevision++; },
+    clearHistory: () => { store.clearHistory(); memoryRevision++; },
+    clearMemories: () => { store.clearMemories(); memoryRevision++; lastUsed = []; },
     openFolder: () => shell.openPath(store.directory(path.dirname(store.status().file))).then(error => {
       if (error) throw new Error(error);
     }),

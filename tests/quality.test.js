@@ -95,8 +95,9 @@ test('AI candidate excerpts are user-only, validated, and rate limited including
   store.append('bot', '我猜它是秘密口令', 'one');
   store.append('user', '我的密码是测试密钥', 'unsafe');
   const current = '明确一下，我指的是创作一部推理小说';
-  store.append('user', current, 'two');
-  const excerpts = store.candidateExcerpts(current);
+  const id = store.append('user', current, 'two');
+  store.append('user', '这条新消息不属于已移出的上下文', 'later');
+  const excerpts = store.candidateExcerpts(id);
   assert.equal(excerpts.length, 2);
   const model = { type: '事项', content: '我的长期目标是创作一部推理小说', evidence: current, support: [excerpts[0]] };
   assert.equal(parseCandidate(JSON.stringify(model), excerpts).content, model.content);
@@ -107,11 +108,12 @@ test('AI candidate excerpts are user-only, validated, and rate limited including
   assert.equal(await detect(req, excerpts, async () => Response.json({ choices: [{ message: { content: JSON.stringify(model) } }] })).then(x => x.content), model.content);
   assert.equal(store.list().length, 0);
   let accepted = 0;
-  for (let i = 0; i < 70; i++) accepted += Number(store.claimExtraction(start + i * minute));
+  for (let i = 0; i < 70; i++) accepted += Number(store.claimExtraction(start + i * minute, i + 1));
   assert.equal(accepted, 6);
   store.close();
-  assert.equal(store.claimExtraction(start + 70 * minute), false);
-  t.diagnostic('simulated quota: 6 attempts across 70 eligible checks; no writes before confirmation');
+  assert.equal(store.claimExtraction(start + 70 * minute, 71), false);
+  assert.equal(store.claimExtraction(start + 2 * 24 * 60 * minute, 51), false);
+  t.diagnostic('simulated quota: 6 attempts across 70 eligible checks; reviewed messages are skipped after reopening');
 });
 
 test('virtual state: response, repeated ignores, temporary focus, midnight quiet, TTS, reminder, restart', t => {

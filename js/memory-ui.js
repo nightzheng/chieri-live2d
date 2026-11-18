@@ -59,32 +59,16 @@ const MemoryUI = {
     memoryElement('#mAuto').disabled = memoryElement('#mLimit').disabled = memoryElement('#mBudget').disabled = !memoryElement('#mEnabled').checked;
     for (const input of document.querySelectorAll('[data-memory-rule]')) input.disabled = !memoryElement('#mEnabled').checked || memoryElement('#mAuto').value === 'off';
     const explanations = {
-      off: '你主动说「记住」或明确更正时，千绘莉仍会请你确认。',
-      rules: '在本机按勾选类别识别「我喜欢」「我经常」等固定句式。临时事项、明显的假设和敏感信息会过滤，经你确认才保存。',
-      ai: '规则无法判断时，可请聊天服务辅助，最多发送三条近期用户消息。每 10 分钟最多一次，每 24 小时最多六次。经你确认才保存。',
+      off: '你主动说「记住」或明确更正时，符合要求的内容会直接保存。',
+      rules: '在本机按勾选类别识别「我喜欢」「我经常」等固定句式。符合条件的内容直接保存。临时事项、明显的假设和敏感信息会过滤。',
+      ai: '保留本地规则。当旧消息超出 16 条或 6000 字符的聊天上下文预算时，可将最多三条筛选过的用户消息交给聊天服务。每 10 分钟最多一次，每 24 小时最多六次。通过检查后自动保存。',
     };
     memoryElement('#mModeHelp').textContent = memoryElement('#mEnabled').checked ? explanations[memoryElement('#mAuto').value] : '已暂停候选提取和对话引用。你仍可管理已有记忆。';
   },
-  async propose(text) {
+  async remember(text) {
     try {
-      const proposal = await this.request('propose', text);
-      if (!proposal) {
-        this.request('semantic', text).then(candidate => {
-          if (!candidate) return;
-          Chat.card('happy', '待确认的记忆：' + candidate.content, ['查看并确认', async () => {
-            if (!window.confirm('保存这条 AI 候选？请核对是否准确。\n\n' + candidate.content)) return;
-            try {
-              await this.request('confirmSemantic', candidate.token);
-              Chat.card('happy', '已保存长期记忆。');
-            } catch (_) { Chat.card('pout', '候选已失效或无法保存。'); }
-          }]);
-        }).catch(() => {});
-        return;
-      }
-      const expiry = proposal.expires_at ? '\n有效至 ' + new Date(proposal.expires_at).toLocaleString() : '';
-      if (!window.confirm('保存为长期记忆？\n\n' + proposal.content + expiry + '\n\n更新同一长期偏好时，旧说法会归档。')) return;
-      await this.request('remember', text);
-      Chat.card('happy', '已保存长期记忆。');
+      const result = await this.request('remember', text);
+      if (result?.explicit) Chat.card('happy', '已保存长期记忆。');
     } catch (_) { Chat.card('pout', '未能保存长期记忆。请检查记忆与数据设置。'); }
   },
   button(text, action) {
@@ -122,7 +106,7 @@ const MemoryUI = {
     memoryElement('#mNext').disabled = rows.length <= this.pageSize;
     memoryElement('#mPage').textContent = `第 ${1 + this.offset / this.pageSize} 页`;
     memoryElement('#mList').replaceChildren(...rows.slice(0, this.pageSize).map(row => this.row(row.content,
-      [row.type, row.tags, ({ manual: '手动', explicit: '明确保存', candidate: '规则候选已确认', semantic: 'AI 候选已确认', import: '导入' })[row.source],
+      [row.type, row.tags, ({ manual: '手动', explicit: '明确保存', candidate: '本地规则', semantic: 'AI 辅助', import: '导入' })[row.source],
         row.expires_at && '有效至 ' + new Date(row.expires_at).toLocaleString(), new Date(row.confirmed).toLocaleDateString()].filter(Boolean).join(' · '), [
         this.button(row.archived ? '编辑并恢复' : '编辑', () => this.edit(row)),
         this.button('删除', () => this.run(async () => {

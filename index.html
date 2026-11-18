@@ -303,8 +303,8 @@
         <fieldset class="desk-only" id="memorySettings">
           <legend>记忆与数据</legend>
           <label class="sw"><input type="checkbox" id="mEnabled"><i></i>启用长期记忆保存和 AI 对话引用</label>
-          <label class="f"><span>候选提取</span><select id="mAuto"><option value="off">关闭自动提取</option><option value="rules">本地规则</option><option value="ai">AI 辅助</option></select></label>
-          <p class="note" id="mModeHelp" aria-live="polite">你主动说「记住」或明确更正时，千绘莉仍会请你确认。</p>
+          <label class="f"><span>自动保存</span><select id="mAuto"><option value="off">关闭自动提取</option><option value="rules" selected>本地规则</option><option value="ai">AI 辅助</option></select></label>
+          <p class="note" id="mModeHelp" aria-live="polite"></p>
           <details id="mRules"><summary>本地规则类别</summary>
             <label class="sw"><input type="checkbox" value="preferences" data-memory-rule><i></i>偏好（我喜欢…）</label>
             <label class="sw"><input type="checkbox" value="habits" data-memory-rule><i></i>习惯或技能（我经常…）</label>
