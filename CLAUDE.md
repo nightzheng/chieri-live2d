@@ -33,6 +33,7 @@ WebGL2 画出来；表情来自 `chc/` 里的表情差分，加载时自动对�
 | `electron/memory-store.js` / `electron/memory-ipc.js` | SQLite 迁移、备份、长期记忆提取与检索，以及历史对话管理 |
 | `electron/companion-ipc.js` / `electron/agenda.js` / `electron/proactive.js` | 日程提醒、主动互动调度和自适应陪伴状态 |
 | `electron/vision-ipc.js` / `electron/vision.js` | 共享来源与预览、屏幕授权、隐私关键词与视觉 API |
+| `electron/pet-layer.js` / `electron/pet-fullscreen.ps1` | Windows 普通置顶的全屏避让。用 Win32 前台窗口与显示器边界判断，只在该层级启动检测 |
 | `voice/chieri_server.py` | 本地声线服务：加载模型包一次，`POST /tts {text}` 返回 WAV，只听 127.0.0.1，启动它的 App 进程（`--parent`）不在了就退出；加载的每一步超过 90 秒会把 Python 调用栈打到日志里 |
 | `voice/Chieri_GPTSoVITS_20261103/` | 千绘莉 GPT-SoVITS 模型包（权重、参考音频、固定版本的 GPT-SoVITS 源码和全部预训练模型，约 1.4 GB）。**只装进完整版**。读它自己的 `README.md` / `handoff.json`。1.2.5 起两个权重都是 **B站 雪村落雪** 提供的 v2ProPlus 模型（见「历史」）；界面、README、完整版安装包都要注明「感谢模型提供者，B站id：雪村落雪提供的模型」 |
 | `io/` | 用户放进来的雪村落雪模型原件：`千绘莉-e50.ckpt`（GPT）、`千绘莉_e20_s6420.pth`（SoVITS v2ProPlus），已复制进模型包的 `delivery/` |

@@ -300,7 +300,7 @@ AI 辅助|AI-assisted
 最近一次 AI 聊天使用的记忆|Memories used in the last AI chat
 显示层级|Window level
 最前（盖过全屏程序和任务栏）|Above full-screen apps
-置顶（在普通窗口上面）|Always on top
+置顶（全屏时让开）|Always on top (yield to fullscreen)
 普通（和其他窗口一样）|Normal
 大小|Size
 鼠标穿透（完全不挡操作，从托盘图标关闭）|Click through (turn off in the tray)

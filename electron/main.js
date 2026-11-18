@@ -7,6 +7,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const ENGLISH = require('../js/i18n-en');
 const UserProfile = require('../js/user-profile');
+const { createPetLayer } = require('./pet-layer');
 
 const ROOT = path.join(__dirname, '..');
 const ICON = path.join(ROOT, 'build', 'icon.png');
@@ -113,7 +114,7 @@ function petBounds() {
   if (!onScreen) { x = wa.x + wa.width - w - 24; y = wa.y + wa.height - h; }
   return { x: Math.round(x), y: Math.round(y), width: w, height: h };
 }
-let petSide = false;
+let petSide = false, petLayer = null;
 // size changes keep her feet where they are (bottom-right anchored), so the side panel opens leftwards
 function fitPet() {
   const b = pet.getBounds(), wa = screen.getDisplayMatching(b).workArea;
@@ -132,28 +133,39 @@ function savePetPos() {
 function applyPet() {
   if (!pet) return;
   const p = settings.pet;
-  if (p.level === 'normal') pet.setAlwaysOnTop(false);
-  else pet.setAlwaysOnTop(true, p.level === 'top' ? 'screen-saver' : 'floating');
-  pet.setIgnoreMouseEvents(true, { forward: !p.clickThrough });
+  petLayer.apply(p.level, p.clickThrough);
   fitPet();
   buildTray();
 }
 function openPet() {
-  if (pet) { pet.showInactive(); return; }
+  if (pet) { petLayer.show(); return; }
   pet = new BrowserWindow({ ...petBounds(), transparent: true, frame: false, resizable: false, maximizable: false, fullscreenable: false,
     skipTaskbar: true, hasShadow: false, backgroundColor: '#00000000', title: settings.name || '千绘莉', icon: ICON, show: false, webPreferences });
+  petLayer = createPetLayer(pet);
+  applyPet();
   pet.loadURL('app://local/index.html?pet');
-  pet.once('ready-to-show', () => { pet.showInactive(); applyPet(); });
+  pet.once('ready-to-show', () => { petLayer.show(); buildTray(); });
   pet.webContents.on('did-finish-load', () => { lastCursor = ''; });
   let t = 0;
   pet.on('moved', () => { clearTimeout(t); t = setTimeout(savePetPos, 400); });
-  pet.on('closed', () => { pet = null; petSide = false; buildTray(); if (!studio && !quitting) app.quit(); });
+  pet.on('closed', () => { petLayer.dispose(); petLayer = null; pet = null; petSide = false; buildTray(); if (!studio && !quitting) app.quit(); });
   buildTray();
 }
 function toPet() { openPet(); if (studio) studio.close(); }
 function toStudio() { openStudio(); if (pet) pet.close(); }
 
 // ---------------------------------------------------------------- tray + menus
+function reveal(win, focus = false) {
+  if (win === pet) petLayer.show();
+  else win.show();
+  if (focus && win.isVisible()) win.focus();
+}
+function togglePetVisibility() {
+  if (petLayer.wantsVisible) petLayer.hide();
+  else petLayer.show();
+  buildTray();
+}
+
 function petMenu() {
   const p = settings.pet, set = patch => { settings.pet = { ...settings.pet, ...patch }; saveSettings(); applyPet(); broadcast(); };
   const menu = [
@@ -164,16 +176,16 @@ function petMenu() {
     { type: 'separator' },
     { label: '显示层级', submenu: Object.entries(LEVELS).map(([k, label]) => ({ label, type: 'radio', checked: p.level === k, click: () => set({ level: k }) })) },
     { label: language('大小', 'Size') + ` (${Math.round((p.scale || 1) * 100)}%)`, submenu: [
-      { label: '无级调节…', enabled: !!pet, click: () => { if (pet) { pet.showInactive(); pet.webContents.send('cmd', 'resize'); } } },
+      { label: '无级调节…', enabled: !!pet, click: () => { if (pet) { petLayer.show(); pet.webContents.send('cmd', 'resize'); } } },
       { type: 'separator' },
       ...[[0.7, '小'], [1, '中'], [1.3, '大'], [1.6, '特大']].map(([k, label]) => ({ label, type: 'radio', checked: Math.abs((p.scale || 1) - k) < 0.01, click: () => set({ scale: k }) })),
     ] },
     { label: '鼠标穿透', type: 'checkbox', checked: !!p.clickThrough, click: m => set({ clickThrough: m.checked }) },
-    { label: '录制模式（F8）', type: 'checkbox', checked: recOn(), click: () => { const w = pet || studio; if (w) { w.show(); w.focus(); w.webContents.send('cmd', 'rec'); } } },
+    { label: '录制模式（F8）', type: 'checkbox', checked: recOn(), click: () => { const w = pet || studio; if (w) { reveal(w, true); w.webContents.send('cmd', 'rec'); } } },
     { label: '开机自动启动', type: 'checkbox', checked: loginOn(), click: m => setLoginItem(m.checked) },
     { type: 'separator' },
     { label: '回到主窗口', click: toStudio },
-    { label: pet && pet.isVisible() ? '隐藏到托盘' : '显示桌面宠物', click: () => { if (!pet) toPet(); else if (pet.isVisible()) pet.hide(); else pet.showInactive(); buildTray(); } },
+    { label: petLayer?.wantsVisible ? '隐藏到托盘' : '显示桌面宠物', click: () => { if (!pet) toPet(); else togglePetVisibility(); } },
     { label: '退出', click: () => { quitting = true; app.quit(); } },
   ];
   const translate = items => items.map(item => ({ ...item,
@@ -187,7 +199,7 @@ function buildTray() {
     // her emblem (tools/ui-art.ps1 makes tray.png and tray@2x.png; the @2x one is picked on high-DPI screens)
     tray = new Tray(nativeImage.createFromPath(path.join(ROOT, 'build', 'tray.png')));
     tray.setToolTip(displayName());
-    tray.on('click', () => { if (pet) { pet.isVisible() ? pet.hide() : pet.showInactive(); buildTray(); } else openStudio(); });
+    tray.on('click', () => { if (pet) togglePetVisibility(); else openStudio(); });
   }
   tray.setContextMenu(Menu.buildFromTemplate(petMenu()));
 }
@@ -263,7 +275,7 @@ ipcMain.handle('ai:request', async (event, r) => {
     return { ok: res.ok, status: res.status, text: await res.text() };
   } catch (e) { return { ok: false, error: e.name === 'TimeoutError' ? '请求超时' : e.message }; }
 });
-ipcMain.on('pet:ignore', (e, v) => { if (pet && e.sender === pet.webContents && !settings.pet.clickThrough) pet.setIgnoreMouseEvents(!!v, { forward: true }); });
+ipcMain.on('pet:ignore', (e, v) => { if (pet && e.sender === pet.webContents) petLayer.ignoreMouse(!!v); });
 ipcMain.on('pet:apply', (_, p) => { settings.pet = { ...settings.pet, ...p }; saveSettings(); applyPet(); });
 // start with Windows: no argument reads it, true / false sets it; -> { on, blocked (by Task Manager), dev }
 ipcMain.handle('app:autoStart', (_, on) => on === undefined || on === null ? loginItem() : setLoginItem(on));
@@ -306,7 +318,7 @@ ipcMain.on('win:toPet', toPet);
 ipcMain.on('win:toStudio', toStudio);
 
 // ---------------------------------------------------------------- boot
-app.on('second-instance', () => { if (pet) pet.showInactive(); else openStudio(); });
+app.on('second-instance', () => { if (pet) petLayer.show(); else openStudio(); });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.whenReady().then(() => {
@@ -323,7 +335,7 @@ app.whenReady().then(() => {
     historyChanged: () => (pet || studio)?.webContents.send('memory:historyChanged'),
   }, localize);
   addMemoryContext = memory.addMemoryContext;
-  companion = require('./companion-ipc')({ store: memory.store, trustedWindow, activeWindow: () => pet || studio, settings: () => settings, language,
+  companion = require('./companion-ipc')({ store: memory.store, trustedWindow, activeWindow: () => pet || studio, settings: () => settings, language, reveal,
     onSpoken: win => vision?.markSpoken(win) });
   vision = require('./vision-ipc')(trustedWindow, () => pet || studio, () => companion.visionPolicy(), chatTarget, language);
   recShortcuts();

@@ -8,7 +8,7 @@ const { Agenda, calendar, nextOccurrence, parseReminder } = require('./agenda');
 const { Proactive, command, quiet } = require('./proactive');
 const { Wellness } = require('./wellness');
 
-module.exports = function companion({ store, trustedWindow, activeWindow, settings, onSpoken = () => {}, language = zh => zh }) {
+module.exports = function companion({ store, trustedWindow, activeWindow, settings, reveal, onSpoken = () => {}, language = zh => zh }) {
   const reminders = new Agenda(() => store.open());
   const proactive = new Proactive(() => store.open());
   const wellness = new Wellness(proactive);
@@ -31,8 +31,7 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       cleanup();
       const win = activeWindow();
       if (win) {
-        win.show();
-        win.focus();
+        reveal(win, true);
         win.webContents.send('companion:agenda');
       }
     });

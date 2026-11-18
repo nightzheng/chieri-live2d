@@ -52,7 +52,7 @@ The monitor icon at the top right of the main window switches to desktop mode: s
 - **Chat and settings**: the window grows a column to the left to hold them, so they never cover her. What she says appears in the empty space above her head.
 - Her eyes follow the mouse anywhere on the screen.
 - Right-click her or the tray icon for:
-  - **Layer**: topmost (above full-screen programs and the taskbar), always on top (above normal windows), or normal (like any other window).
+  - **Layer**: Topmost may cover fullscreen apps and the taskbar. Always on top stays above ordinary windows, yields to a foreground fullscreen app on the same display, and returns when fullscreen ends. Normal follows the usual window order.
   - **Size** and **click-through** (she blocks nothing at all; turn it off from the tray icon).
   - **Start at login**;
   - hide to the tray, and quit.
