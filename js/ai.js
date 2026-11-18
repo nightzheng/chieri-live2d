@@ -102,6 +102,22 @@ const EVENT_DESC = {
 const AI_EMOTIONS = ['neutral', 'smile', 'happy', 'gentle', 'surprised', 'shock', 'troubled', 'shy', 'jito', 'pout', 'sad', 'curious', 'enjoy', 'sleepy'];
 const AI_ACTIONS = { none: '无', hop: '开心地跳一下', swish: '甩尾巴', twitch: '抖耳朵', blush: '脸红', hearts: '冒出爱心', sweat: '慌张流汗', anger: '生气（冒青筋）', notes: '哼歌（冒音符）', sleep: '打瞌睡' };
 
+function localClock(now = new Date()) {
+  const hour = now.getHours(), minute = now.getMinutes();
+  const period = hour < 5 ? '深夜' : hour < 11 ? '早上' : hour < 14 ? '中午' : hour < 18 ? '下午' : hour < 23 ? '晚上' : '深夜';
+  const time = [hour, minute].map(value => String(value).padStart(2, '0')).join(':');
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local';
+  return { hour, minute, time, zone, period };
+}
+
+const TIME_GREETINGS = {
+  早上: '早上好呀，今天也按自己的节奏来吧。',
+  中午: '中午好呀，要不要给自己留一点休息时间？',
+  下午: '下午好呀，歇一会儿也没关系。',
+  晚上: '晚上好呀，今天过得怎么样？',
+  深夜: '夜深啦。我还在这儿，有想说的就说吧。',
+};
+
 const AI = {
   history: [],            // [{role:'user'|'assistant', content}]
   busy: false, interacting: 0, lastAt: 0, seq: 0,
@@ -110,6 +126,7 @@ const AI = {
   systemPrompt(state) {
     const s = Store.data, emo = AI_EMOTIONS.map(k => `${k}(${EXPR_LABELS[k] || k})`).join('、');
     const act = Object.entries(AI_ACTIONS).map(([k, v]) => `${k}(${v})`).join('、');
+    const clock = localClock();
     // a Japanese voice needs the reply in Japanese too; asking for it here saves a second request
     const ja = typeof Voice !== 'undefined' && Voice.wantsJa();
     return `你在扮演桌面宠物角色「${s.name}」。以下是角色设定：
@@ -124,6 +141,7 @@ ${s.persona}
 - affection：这件事让你对对方的好感变化，-0.2 到 0.2 之间的小数。${ja ? `
 - ja：reply 里说出口的话的日语版（自然的口语，保持角色语气，自称「私」，用です・ます体），不含（）里的神态描写，不加注音。` : ''}
 当前状态：好感 ${Math.round(state.aff * 100)}/100，不满 ${Math.round(Math.min(1, state.ang) * 100)}/100${state.mood ? '，' + state.mood : ''}。` +
+      `\n本机时间：${clock.time}（${clock.period}，${clock.zone}）。问候可符合时段。只有对方问时间或话题相关时才需要提到时间，不要仅凭时段推断对方正在做什么。` +
       (I18n.locale === 'en' ? '\nWrite the reply field in natural English, including stage directions. Keep JSON keys and enum values unchanged. If requested, still write the ja field in Japanese.' : '');
   },
 

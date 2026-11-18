@@ -101,11 +101,14 @@ async function run() {
   assert.equal(await js("document.querySelector('#settings').classList.contains('hidden')"), false);
   await js(`document.querySelector('#sAmbient').value = '15';
     document.querySelector('#pLimit').value = '7';
+    document.querySelector('#wWater').value = '45';
+    document.querySelector('#wStand').value = '60';
     document.querySelector('#visModel').value = 'vision-test';
     document.querySelector('#visKey').value = 'test-vision-key';
     Settings.save()`);
   assert.equal(await js("petAPI.memory('status').then(s => s.mode)"), 'rules');
   assert.equal(await js("petAPI.companion('options').then(s => s.limit)"), 7);
+  assert.deepEqual(await js("petAPI.companion('wellnessOptions').then(({water, stand}) => [water, stand])"), [45, 60]);
   assert.equal(await js("petAPI.getSettings().then(s => s.ambientMinutes)"), 15);
   await js('Settings.open(); true');
   await until(() => js('!Settings.loading'));
@@ -162,6 +165,9 @@ async function run() {
   await js("window.confirm = () => { throw new Error('保存记忆不应弹确认'); }; MemoryUI.remember('我喜欢骑自行车')");
   assert.equal(await js("petAPI.memory('list').then(rows => rows.length)"), 1);
   assert.equal(await js("document.querySelector('#aZone').tagName"), 'SELECT');
+  assert.deepEqual(await js("[5, 11, 14, 18, 23].map(hour => localClock(new Date(2026, 10, 18, hour)).period)"),
+    ['早上', '中午', '下午', '晚上', '深夜']);
+  assert.match(await js("localTimeReply('现在几点？').reply"), /现在是.*\d{2}:\d{2}/);
   await js(`(async () => {
     for (let i = 0; i < 13; i++) await petAPI.memory('save', {content:'样本记忆 ' + i, type:'事实', tags:''});
     await petAPI.memory('append', {who:'user', text:'原始问句', conversation:'manage-test'});
@@ -185,6 +191,8 @@ async function run() {
   await until(() => js("document.documentElement.lang === 'en'"));
   await until(() => data("document.documentElement.lang === 'en'"));
   assert.equal(await js("document.querySelector('#sSave').textContent"), 'Save all');
+  assert.equal(await js("document.querySelector('#wellnessSettings summary').textContent"), 'Wellness reminders');
+  assert.match(await js("localTimeReply('What time is it?').reply"), /in your time zone/);
   assert.equal(await js("document.querySelector('#sName').value"), '草稿');
   assert.equal(await js("petAPI.getSettings().then(s => s.locale)"), 'en');
   assert.equal(await js("localReply('hello').reply"), 'Hello! I was just about to say hi.');

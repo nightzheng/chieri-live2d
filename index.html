@@ -199,6 +199,17 @@
         <fieldset class="desk-only" id="agendaSettings">
           <legend>提醒与日程</legend>
           <p class="note">千绘莉运行时会提醒，包括隐藏到托盘时。睡眠或退出期间错过的提醒会在这里列出。</p>
+          <details id="wellnessSettings">
+            <summary>生活提醒</summary>
+            <p class="note">喝水和起身按电脑活跃时间累计。夜深提醒每天最多一次，离开电脑时会等你回来。用「保存全部」应用选项。</p>
+            <label class="f"><span>喝水提醒</span><select id="wWater"></select></label>
+            <label class="f"><span>起身活动</span><select id="wStand"></select></label>
+            <label class="sw"><input type="checkbox" id="wNight"><i></i>开启夜深提醒</label>
+            <label class="f"><span>夜深时间</span><input type="time" id="wNightAt" value="23:30" aria-label="夜深提醒时间"></label>
+            <label class="sw"><input type="checkbox" id="wVoice"><i></i>朗读生活提醒</label>
+            <label class="sw"><input type="checkbox" id="wNotify" checked><i></i>显示系统通知</label>
+            <p class="note" id="wTimezone"></p>
+          </details>
           <label class="f"><span>标题</span><input id="aTitle" maxlength="100"></label>
           <label class="f"><span>内容</span><textarea id="aContent" maxlength="500" rows="2"></textarea></label>
           <label class="f"><span>日期</span><input type="date" id="aDay"></label>

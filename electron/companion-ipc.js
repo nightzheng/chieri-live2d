@@ -6,16 +6,19 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { Agenda, calendar, nextOccurrence, parseReminder } = require('./agenda');
 const { Proactive, command, quiet } = require('./proactive');
+const { Wellness } = require('./wellness');
 
 module.exports = function companion({ store, trustedWindow, activeWindow, settings, onSpoken = () => {}, language = zh => zh }) {
   const reminders = new Agenda(() => store.open());
   const proactive = new Proactive(() => store.open());
+  const wellness = new Wellness(proactive);
   const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
   const notifications = new Map();
   let ticket, delivery, locked = false, activity = Date.now(), pendingDb, suspended = false, announcedMissed = 0;
   const invalidate = () => { ticket = delivery = null; };
   const presence = (busy = false, recording = false) => ({ now: Date.now(), zone: zone(), idle: Date.now() - activity,
     locked: locked || suspended, busy, recording: recording || !!settings().rec?.on, reminder: !!reminders.pending() });
+  const atComputer = () => !locked && !suspended && !settings().rec?.on && powerMonitor.getSystemIdleTime() < 300;
 
   function showNotice(event) {
     if (!event.notify || !Notification.isSupported()) return;
@@ -42,16 +45,19 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       const db = store.open();
       const first = db !== pendingDb;
       pendingDb = db;
-      if (first) { reminders.recoverPending(); proactive.reset(); invalidate(); announcedMissed = 0; }
-      for (const row of reminders.tick(Date.now(), missed || first)) showNotice(row);
+      if (first) { reminders.recoverPending(); proactive.reset(); wellness.reset(); invalidate(); announcedMissed = 0; }
+      const now = Date.now();
+      for (const row of reminders.tick(now, missed || first)) showNotice(row);
+      const options = wellness.options();
+      if (options.water || options.stand) wellness.observe(now, atComputer(), options);
     } catch (_) {
       // The memory panel surfaces unavailable data and recovery actions.
     }
   }
 
-  powerMonitor.on('lock-screen', () => { locked = true; invalidate(); });
+  powerMonitor.on('lock-screen', () => { locked = true; wellness.observe(Date.now(), false, {}); invalidate(); });
   powerMonitor.on('unlock-screen', () => { locked = false; activity = Date.now(); });
-  powerMonitor.on('suspend', () => { suspended = true; invalidate(); });
+  powerMonitor.on('suspend', () => { suspended = true; wellness.observe(Date.now(), false, {}); invalidate(); });
   powerMonitor.on('resume', () => { suspended = false; activity = Date.now(); tick(true); });
   const timer = setInterval(tick, 3000);
   tick(true);
@@ -106,6 +112,8 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       return reminders.import(parsed, Date.now());
     },
     options: () => proactive.options(),
+    wellnessOptions: () => wellness.options(),
+    configureWellness: (_, value) => wellness.configure(value),
     configure: (_, value) => { invalidate(); proactive.temporary('normal', 0, Date.now()); return proactive.configure(value, Date.now()); },
     status: (_, value) => proactive.status(presence(value?.busy === true, value?.recording === true)),
     ambientAllowed(win) {
@@ -166,6 +174,18 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       } catch (_) { return null; }
       const now = Date.now();
       if (reminder && reminders.action(reminder.id, 'show', now)) return { reminder, missed };
+      if (delivery?.expires <= now) invalidate();
+      if (!value.recording && !value.proactiveBusy && !delivery) {
+        const options = wellness.options();
+        const wellbeing = (options.water || options.stand || options.night) && wellness.claim(now, zone(), atComputer());
+        if (wellbeing) {
+          const titles = { water: language('喝水', 'Drink some water'), stand: language('起身活动', 'Stand and move'),
+            night: language('夜深了，记得休息', 'It’s getting late. Time to wind down.') };
+          showNotice({ id: randomUUID(), notify: wellbeing.notify, title: language('千绘莉 · 生活提醒', 'Chieri · Wellness reminder'),
+            content: wellbeing.kinds.map(kind => titles[kind]).join(language(' · ', ' · ')) });
+          return { wellness: wellbeing, missed };
+        }
+      }
       const next = proactive.claim({ now, zone: zone(), idle: now - activity, busy: value.proactiveBusy, locked, recording: value.recording || !!settings().rec?.on });
       if (!next) return missed ? { missed } : null;
       ticket = { id: randomUUID(), win, expires: now + 20000 };

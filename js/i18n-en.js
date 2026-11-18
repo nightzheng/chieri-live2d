@@ -158,6 +158,14 @@ CPU（很慢）|CPU (slow)
 预生成固定台词|Pre-generate fixed lines
 提前合成全部固定台词并缓存，反应时立刻出声|Cache fixed lines for immediate playback
 提醒与日程|Reminders & schedule
+生活提醒|Wellness reminders
+喝水和起身按电脑活跃时间累计。夜深提醒每天最多一次，离开电脑时会等你回来。用「保存全部」应用选项。|Hydration and stretch reminders count computer activity. The late-night reminder appears once per night while you are active. Select Save all to apply.
+喝水提醒|Hydration reminders
+起身活动|Stand and move
+开启夜深提醒|Enable late-night reminder
+夜深时间|Late-night time
+夜深提醒时间|Late-night reminder time
+朗读生活提醒|Read wellness reminders aloud
 千绘莉运行时会提醒，包括隐藏到托盘时。睡眠或退出期间错过的提醒会在这里列出。|Reminders work while Chieri runs, including in the tray. Missed reminders appear here.
 标题|Title
 内容|Notes
@@ -464,6 +472,13 @@ Ollama 本地|Local Ollama
 要不要伸个懒腰？我才没有在催你呢。|How about a stretch? I'm not trying to rush you.
 我在这里陪你哦。有想聊的就说吧。|I'm right here. If you want to talk, go ahead.
 早上好呀，今天也按自己的节奏来吧。|Good morning. Take today at your own pace.
+中午好呀，要不要给自己留一点休息时间？|It’s around noon. How about taking a little break?
+下午好呀，歇一会儿也没关系。|Good afternoon. It’s fine to take a little break.
+晚上好呀，今天过得怎么样？|Good evening. How was your day?
+夜深啦。我还在这儿，有想说的就说吧。|It’s late. I’m still here if you feel like talking.
+喝口水吧，先歇一下。|Time for a sip of water and a short break.
+要不要起身走几步，活动一下？|How about standing up and moving around a little?
+时间不早了，有空就准备休息吧。|It’s getting late. Start winding down when you can.
 你今天过得怎么样？我只是随口问问啦。|How's your day going? I'm just asking, that's all.
 `.trim().split('\n').map(line => line.split('|')));
 

@@ -127,6 +127,13 @@ const Chat = {
       await MemoryUI.remember(text);
     }
     S.look = { x: PET ? 0 : -0.35, y: 0.5, until: S.t + 2 };
+    const timeReply = localTimeReply(text);
+    if (timeReply) {
+      say(timeReply.reply, 'smile', null, { kind: 'chat', ja: timeReply.ja });
+      this.add('bot', timeReply.reply);
+      await this.persist('bot', timeReply.reply, conversation);
+      return;
+    }
     if (!Store.data.aiChat || !AI.ready()) {
       const r = localReply(text);
       await new Promise(resolve => setTimeout(resolve, 350));
@@ -166,7 +173,20 @@ const Chat = {
 };
 
 // without an AI configured: a few keyword answers, otherwise a gentle shrug
+function localTimeReply(text) {
+  if (!/^(?:(?:千绘莉|chieri)[，,\s]+)?(?:现在几点(?:了)?|现在是什么时间|现在时间|what time is it(?: now)?|what'?s the time(?: now)?)[。?？!！]*$/iu.test(text.trim())) return null;
+  const clock = localClock();
+  return {
+    reply: I18n.pick(`现在是${clock.period} ${clock.time}（${clock.zone}）。`, `It’s ${clock.time} in your time zone (${clock.zone}).`),
+    ja: `今は${clock.hour}時${clock.minute}分です。`,
+  };
+}
+
 function localReply(text) {
+  if (/^(?:早安|早上好|中午好|下午好|晚上好|good (?:morning|afternoon|evening))[。！!\s]*$/iu.test(text.trim())) {
+    const line = TIME_GREETINGS[localClock().period];
+    return { reply: I18n.fixed(line), emotion: 'gentle', ja: VOICE_JA[line] };
+  }
   if (I18n.locale === 'en') {
     if (/\b(?:hello|hi|hey|good morning)\b|你好/i.test(text)) return { reply: 'Hello! I was just about to say hi.', emotion: 'smile', ja: 'こんにちは。私から挨拶しようと思っていたところです。' };
     if (/\b(?:good night|sleep|tired)\b|晚安/i.test(text)) return { reply: 'Good night. Get some proper rest, all right?', emotion: 'sleepy', ja: 'おやすみなさい。ゆっくり休んでくださいね。' };
@@ -216,7 +236,7 @@ const Settings = {
     if (DESKTOP) {
       this.loading = $('#sSave').disabled = $('#settings .body').inert = true;
       Promise.allSettled([this.autoStart(), MemoryUI.open(), CompanionUI.open(), VisionUI.open()]).then(() => {
-        for (const key of ['startup', 'memory', 'proactive', 'vision']) this.capture(key);
+        for (const key of ['startup', 'memory', 'proactive', 'vision', 'wellness']) this.capture(key);
         this.loading = $('#sSave').disabled = $('#settings .body').inert = false;
       });
     }
@@ -238,6 +258,7 @@ const Settings = {
     if (key === 'startup') return $('#sAutoStart').checked;
     if (key === 'memory') return MemoryUI.readOptions();
     if (key === 'proactive') return CompanionUI.readOptions();
+    if (key === 'wellness') return CompanionUI.readWellness();
     return VisionUI.readOptions();
   },
   capture(key) { this.baseline[key] = JSON.stringify(this.value(key)); },
@@ -314,6 +335,7 @@ const Settings = {
     const actions = {
       vision: ['视觉', value => VisionUI.saveOptions(value)],
       proactive: ['主动互动', value => CompanionUI.saveOptions(value)],
+      wellness: ['生活提醒', value => CompanionUI.call('configureWellness', value)],
       memory: ['记忆与数据', value => MemoryUI.request('options', value)],
       regular: ['常规', async value => {
         await Store.save(value, true);
@@ -494,6 +516,7 @@ function applyLanguage(locale) {
   if (DESKTOP) {
     MemoryUI.modeHelp();
     $('#pFrequency').onchange();
+    CompanionUI.labelWellness();
   }
   renderRecKeys();
   if (VoiceUI.draft) { VoiceUI.pull(); VoiceUI.render(); }

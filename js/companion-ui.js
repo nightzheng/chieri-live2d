@@ -24,11 +24,13 @@ const CompanionUI = {
     await Promise.all([
       this.task('#aFeedback', () => this.refresh()),
       this.task('#pFeedback', () => this.loadOptions()),
+      this.task('#aFeedback', () => this.loadWellness()),
     ]);
   },
   async refresh() {
     const { reminders, events, timezone } = await this.call('list');
     this.timezone = timezone;
+    this.labelWellness();
     const zones = [...new Set([timezone, 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Tokyo', 'UTC', ...Intl.supportedValuesOf('timeZone')])];
     const zone = $('#aZone');
     if (!zone.options.length) {
@@ -123,6 +125,29 @@ const CompanionUI = {
     await this.call('configure', options);
     if (Voice.currentKind === 'proactive' && (!options.enabled || options.manual !== 'normal')) Voice.interrupt();
   },
+  async loadWellness() {
+    const value = await this.call('wellnessOptions');
+    $('#wWater').value = value.water;
+    $('#wStand').value = value.stand;
+    $('#wNight').checked = value.night;
+    $('#wNightAt').value = value.nightAt;
+    $('#wVoice').checked = value.voice;
+    $('#wNotify').checked = value.notify;
+    $('#wNightAt').disabled = !value.night;
+  },
+  readWellness() {
+    return { water: +$('#wWater').value, stand: +$('#wStand').value, night: $('#wNight').checked,
+      nightAt: $('#wNightAt').value, voice: $('#wVoice').checked, notify: $('#wNotify').checked };
+  },
+  labelWellness() {
+    for (const id of ['#wWater', '#wStand']) {
+      const field = $(id), selected = field.value || '0';
+      field.replaceChildren(...[0, 30, 45, 60, 90, 120].map(min => new Option(min
+        ? I18n.pick(`${min} 分钟`, `${min} minutes`) : I18n.pick('关闭', 'Off'), String(min))));
+      field.value = selected;
+    }
+    $('#wTimezone').textContent = I18n.pick('本机时区：', 'Device time zone: ') + (this.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+  },
   lowPriorityVoice() { return ['proactive', 'ambient'].includes(Voice.currentKind); },
   activity(kind = 'touch') {
     if (this.lowPriorityVoice()) Voice.interrupt();
@@ -147,6 +172,7 @@ const CompanionUI = {
         proactiveBusy: this.busy() });
       if (response?.missed) toast(`错过了 ${response.missed} 条提醒，可在「提醒与日程」查看`, 5500);
       if (response?.reminder) this.queued = response.reminder;
+      if (response?.wellness) this.deliverWellness(response.wellness);
       if (response?.proactive && !this.busy()) this.speak(response.proactive);
       if (!$('#settings').classList.contains('hidden')) await this.refreshState();
     } catch (_) {
@@ -161,25 +187,35 @@ const CompanionUI = {
     say(words, 'smile', 5, { kind: 'reminder', voice: !!event.voice, ja: '時間ですよ。予定を確認してくださいね。' });
     if (!$('#settings').classList.contains('hidden')) this.task('#aFeedback', () => this.refresh());
   },
+  deliverWellness({ kinds, voice }) {
+    if (S.anim?.ambient) S.anim = null;
+    const lines = {
+      water: '喝口水吧，先歇一下。',
+      stand: '要不要起身走几步，活动一下？',
+      night: '时间不早了，有空就准备休息吧。',
+    };
+    const words = kinds.map(kind => I18n.text(lines[kind])).join(I18n.pick('', ' '));
+    Chat.card('happy', words);
+    say(words, 'gentle', 5, { kind: 'reminder', voice, ja: kinds.map(kind => VOICE_JA[lines[kind]]).join('') });
+  },
   async speak(options) {
     this.talking = true;
     const startingActivity = this.activityAt;
-    const hour = new Date().getHours();
+    const { period } = localClock();
+    const greeting = TIME_GREETINGS[period];
     const choices = [
       ['休息', '要不要伸个懒腰？我才没有在催你呢。', 'ちょっと伸びをしませんか？別に急かしてるわけじゃないです。'],
       ['话题', '我在这里陪你哦。有想聊的就说吧。', 'ここにいますよ。話したいことがあれば聞きます。'],
-      hour < 12 ? ['问候', '早上好呀，今天也按自己的节奏来吧。', 'おはようございます。今日も自分のペースでいきましょう。']
-        : ['问候', '你今天过得怎么样？我只是随口问问啦。', '今日はどうでしたか？ちょっと聞いただけですよ。'],
+      ['问候', greeting, VOICE_JA[greeting]],
     ].filter(([category]) => category !== this.lastCategory);
     let [category, reply, ja] = pick(choices);
     let emotion = 'gentle', action = { 休息: 'swish', 话题: 'twitch', 问候: 'swish' }[category];
     try {
       if (options.ai && AI.ready()) {
         try {
-          const time = hour < 12 ? '上午' : hour < 18 ? '下午' : '晚上';
           const out = AI.parse(await AI.complete(AI.systemPrompt(aiState()) +
             '\n这是主动打招呼。只说一句，避免重复上次主题。若附有本次授权的屏幕描述，可以自然提及其中的公开主题；否则以' + category + '为主题。不要猜测用户的情绪、健康或屏幕内容。',
-          [{ role: 'user', content: '请在' + time + '和我轻松打个招呼。' }],
+          [{ role: 'user', content: '请在' + period + '和我轻松打个招呼。' }],
           { timeout: 15000, maxTokens: 240, proactive: options.ticket }));
           const unsupported = /(?:我|刚)(?:刚才|刚刚)?(?:看见|看到|看着|注意到你正在)|你(?:一定|肯定|明显|看起来)(?:很|有点)?(?:累|难过|疲惫|生病|不舒服)/;
           if (out.reply !== '……' && out.reply !== this.lastLine && !unsupported.test(out.reply)) {
@@ -205,6 +241,8 @@ const CompanionUI = {
   },
   init() {
     if (!window.petAPI) return;
+    this.labelWellness();
+    $('#wNight').onchange = () => { $('#wNightAt').disabled = !$('#wNight').checked; };
     for (const day of '日一二三四五六') {
       const label = document.createElement('label'), box = document.createElement('input');
       box.type = 'checkbox'; label.append(box, ' 周' + day); $('#aWeekdays').append(label);

@@ -8,7 +8,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { setTimeout: delay } = require('node:timers/promises');
 const { app, BrowserWindow, dialog, desktopCapturer, nativeImage, powerMonitor } = require('electron');
-const { calendar } = require('../electron/agenda');
+const { calendar, zoned } = require('../electron/agenda');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chieri-assistant-test-'));
 for (const dir of ['config', 'local', 'temp']) fs.mkdirSync(path.join(root, dir));
@@ -246,6 +246,16 @@ async function run() {
   })()`);
   await until(async () => (await ipc('memory', 'list')).some(row => row.source === 'semantic' && row.content.includes('版画')));
   assert.equal(semanticRequests.length, 2);
+  await ipc('companion', 'configure', { ...await ipc('companion', 'options'), enabled: false });
+  const wellnessOptions = await ipc('companion', 'wellnessOptions');
+  await ipc('companion', 'configureWellness', { ...wellnessOptions, night: true, nightAt: '23:30', notify: false });
+  powerMonitor.getSystemIdleTime = () => 600;
+  now = zoned(calendar(now, agenda.timezone).day, '23:45', agenda.timezone);
+  const poll = () => ipc('companion', 'poll', { busy: false, recording: false, proactiveBusy: false });
+  assert.equal((await poll())?.wellness, undefined);
+  powerMonitor.getSystemIdleTime = () => 1;
+  await until(() => runJS("document.querySelector('#msgs').textContent.includes('时间不早了')"));
+  assert.equal((await poll())?.wellness, undefined);
   console.log('Electron passed proactive vision and automatic memory saving at both chat context limits.');
 }
 
