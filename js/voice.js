@@ -117,7 +117,7 @@ const Voice = {
     const id = ++this.seq, t0 = performance.now(), wait = opt.kind === 'chat' ? 40000 : 15000;
     this.stop();
     this.currentKind = opt.kind || 'react';
-    const p = this.ready.get(text) || this.make(text, opt).catch(e => this.fail(e));
+    const p = opt.buffer ? Promise.resolve(opt.buffer) : this.ready.get(text) || this.make(text, opt).catch(e => this.fail(e));
     this.ready.delete(text);
     p.then(buf => { if (buf && id === this.seq && performance.now() - t0 < wait) this.play(buf); });
     return true;
@@ -131,6 +131,16 @@ const Voice = {
     this.ready.set(text, p);
     if (this.ready.size > 6) this.ready.delete(this.ready.keys().next().value);
     return Promise.race([p, new Promise(r => setTimeout(r, timeout))]);
+  },
+  async prepareAnimation(text, opt, timeout = 5000) {
+    if (opt.voice === false || !this.on(opt.kind)) return null;
+    let timer;
+    try {
+      return await Promise.race([
+        this.make(text, opt).catch(e => this.fail(e)),
+        new Promise(resolve => { timer = setTimeout(resolve, timeout); }),
+      ]);
+    } finally { clearTimeout(timer); }
   },
   // text -> decoded AudioBuffer (null when there is nothing to say); throws on failure
   async make(text, opt = {}) {

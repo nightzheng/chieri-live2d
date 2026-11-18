@@ -220,8 +220,9 @@
         <fieldset class="desk-only" id="proactiveSettings">
           <legend>主动互动</legend>
           <label class="sw"><input type="checkbox" id="pEnabled"><i></i>开启主动闲聊</label>
-          <label class="f"><span>频率</span><select id="pFrequency"><option value="occasional">偶尔 · 45–90 分钟</option><option value="medium">适中 · 20–40 分钟</option><option value="frequent">频繁 · 10–20 分钟</option><option value="custom">自定义</option></select></label>
+          <label class="f"><span>闲聊频率</span><select id="pFrequency" aria-describedby="pFrequencyHelp"><option value="occasional">偶尔（约 45–90 分钟）</option><option value="medium">适中（约 20–40 分钟）</option><option value="frequent">频繁（约 10–20 分钟）</option><option value="custom">自定义</option></select></label>
           <label class="f"><span>最小间隔</span><input type="number" id="pMin" min="10" max="1440" aria-label="最小间隔（分钟）"></label>
+          <p class="note" id="pFrequencyHelp"></p>
           <label class="f"><span>安静开始</span><input type="time" id="pQuietFrom"></label>
           <label class="f"><span>安静结束</span><input type="time" id="pQuietTo"></label>
           <label class="f"><span>每日上限</span><input type="number" id="pLimit" min="1" max="24"></label>
@@ -250,8 +251,8 @@
           <label class="f"><span>陪伴偏好</span><select id="pManual"><option value="normal">日常</option><option value="quiet">保持安静</option><option value="focus">保持专注</option></select></label>
           <p class="note" id="pState" aria-live="polite"></p>
           <label class="sw"><input type="checkbox" id="pVoice"><i></i>同时朗读主动台词</label>
-          <label class="f"><span>日常语气词</span><select id="sAmbient"><option value="0">关闭</option><option value="1">至少间隔 1 分钟</option><option value="5">至少间隔 5 分钟</option><option value="15">至少间隔 15 分钟</option><option value="30">至少间隔 30 分钟</option></select></label>
-          <p class="note">适用于发呆、哼歌、伸懒腰等自动发声。</p>
+          <label class="f"><span>动作与语气词</span><select id="sAmbient" aria-describedby="sAmbientHelp"><option value="0">关闭</option><option value="1">频繁（约 1–2 分钟）</option><option value="5">适中（约 5–10 分钟）</option><option value="15">偶尔（约 15–30 分钟）</option><option value="30">很少（约 30–60 分钟）</option></select></label>
+          <p class="note" id="sAmbientHelp">伸懒腰、哼歌等日常动作与语气词一起触发。安静、休眠或忙碌时会顺延。</p>
           <p class="note" id="pFeedback" role="status"></p>
         </fieldset>
         <fieldset class="desk-only" id="visionSettings">

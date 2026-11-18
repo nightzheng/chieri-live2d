@@ -125,6 +125,7 @@ const CompanionUI = {
   lowPriorityVoice() { return ['proactive', 'ambient'].includes(Voice.currentKind); },
   activity(kind = 'touch') {
     if (this.lowPriorityVoice()) Voice.interrupt();
+    if (S.anim?.ambient) S.anim = null;
     const now = Date.now();
     if (!window.petAPI || (kind !== 'chat' && now - this.activityAt < 1000)) return;
     this.activityAt = now;
@@ -153,6 +154,7 @@ const CompanionUI = {
   },
   deliver(event) {
     if (this.lowPriorityVoice()) Voice.interrupt();
+    if (S.anim?.ambient) S.anim = null;
     const words = '时间到了，记得' + event.title + '。';
     Chat.card('happy', words, ['查看提醒', () => this.showAgenda()]);
     say(words, 'smile', 5, { kind: 'reminder', voice: !!event.voice, ja: '時間ですよ。予定を確認してくださいね。' });
@@ -168,7 +170,8 @@ const CompanionUI = {
       hour < 12 ? ['问候', '早上好呀，今天也按自己的节奏来吧。', 'おはようございます。今日も自分のペースでいきましょう。']
         : ['问候', '你今天过得怎么样？我只是随口问问啦。', '今日はどうでしたか？ちょっと聞いただけですよ。'],
     ].filter(([category]) => category !== this.lastCategory);
-    let [category, reply, ja] = pick(choices), emotion = 'gentle';
+    let [category, reply, ja] = pick(choices);
+    let emotion = 'gentle', action = { 休息: 'swish', 话题: 'twitch', 问候: 'swish' }[category];
     try {
       if (options.ai && AI.ready()) {
         try {
@@ -182,15 +185,21 @@ const CompanionUI = {
             reply = out.reply.slice(0, 100);
             ja = out.ja || 'こんにちは。少しお話ししませんか？';
             emotion = out.emotion || emotion;
+            if (['hop', 'swish', 'twitch', 'blush', 'hearts', 'notes'].includes(out.action)) action = out.action;
           }
         } catch (_) {}
       }
-      if (this.busy() || Rec.on || this.queued || startingActivity !== this.activityAt ||
-          !await this.call('canSpeak', options.ticket) || this.busy() || Rec.on || this.queued || startingActivity !== this.activityAt ||
-          !await this.call('spoken', options.ticket) || this.busy() || Rec.on || this.queued || startingActivity !== this.activityAt) return;
+      const available = () => !this.busy() && !Rec.on && !this.queued && !S.drag && startingActivity === this.activityAt;
+      if (!available() || !await this.call('canSpeak', options.ticket) || !available()) return;
+      const opt = { kind: 'proactive', voice: options.voice, ja };
+      const buffer = await Voice.prepareAnimation(reply, opt);
+      if (!available() || !await this.call('canSpeak', options.ticket) || !available() ||
+          !await this.call('spoken', options.ticket) || !available()) return;
       this.lastLine = reply;
       this.lastCategory = category;
-      say(reply, emotion, null, { kind: 'proactive', voice: options.voice, ja });
+      if (S.anim?.ambient) S.anim = null;
+      say(reply, emotion, null, { ...opt, buffer, voice: !!buffer });
+      doAction(action);
     } catch (_) {} finally { this.talking = false; }
   },
   init() {
@@ -212,7 +221,14 @@ const CompanionUI = {
       Settings.feedback('#aFileFeedback', `已导入 ${count} 条提醒，导入项目为暂停状态`, 'ok');
       await this.refresh();
     });
-    $('#pFrequency').onchange = () => { $('#pMin').disabled = $('#pFrequency').value !== 'custom'; };
+    const updateFrequency = () => {
+      const custom = $('#pFrequency').value === 'custom', min = +$('#pMin').value;
+      $('#pMin').disabled = !custom;
+      $('#pFrequencyHelp').textContent = custom && min >= 10 && min <= 1440
+        ? `主动闲聊通常每 ${min}–${min * 2} 分钟一次。安静时段、连续未回应或达到每日上限时可能更久。`
+        : '括号内是主动闲聊的基础间隔。安静时段、连续未回应或达到每日上限时可能更久。';
+    };
+    $('#pFrequency').onchange = $('#pMin').oninput = updateFrequency;
     $('#pEnabled').onchange = $('#pAI').onchange = $('#pVision').onchange = () => this.visionControls();
     // Only keep the time of input in Chieri. No keys or text are inspected or persisted.
     for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => this.activity(), true);

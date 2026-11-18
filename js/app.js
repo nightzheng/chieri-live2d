@@ -627,7 +627,7 @@ const S = {
   ears: [spr(), spr()], earPull: [null, null], hair: [], tail: spr(), tailWave: 0.05, tailDrag: null, hairDrag: null,
   skirt: spr(), squash: spr(), hop: 0, hopV: 0, pokes: [], blush: spr(0.15),
   gaze: { x: 0, y: 0, cx: null, cy: null, active: false }, look: null,
-  lastMouse: 0, wakeGrace: 0, anim: null, animNext: 10, carry: null, skirtPull: null, skirtSpring: null,
+  lastMouse: 0, wakeGrace: 0, anim: null, carry: null, skirtPull: null, skirtSpring: null,
   blink: { next: 2, t: -1, double: false }, eyeClose: spr(0),
   face: { cur: null, prev: null, fade: 1, sem: 'neutral', until: 0, idleSem: 'neutral' },
   talkUntil: 0, mouth: 0,
@@ -678,18 +678,33 @@ function say(text, sem, dur, opt = {}) {
   // spoken aloud: once the audio plays her mouth follows it instead of the typing
   if (opt.voice !== false) Voice.speak(text, opt);
 }
-let lastAmbient = 0, ambientCheck = 0;
-async function ambientSay(text, sem, dur) {
-  if (sem) setFace(sem, dur || 2);
-  const available = () => Store.data.ambientMinutes > 0 && S.t - lastAmbient >= Store.data.ambientMinutes * 60 &&
+let ambientNext = 0, ambientFrequency = null, ambientPending = false;
+async function ambientMoment() {
+  const minutes = Store.data.ambientMinutes;
+  if (minutes !== ambientFrequency) {
+    ambientFrequency = minutes;
+    ambientNext = S.t + rand(minutes, minutes * 2) * 60;
+  }
+  const available = () => minutes > 0 && minutes === Store.data.ambientMinutes && S.opt.idle && !S.sleep &&
+    !S.drag && !S.anim && !S.switching && S.angryUntil <= S.t &&
     !Rec.on && !CompanionUI.busy() && !CompanionUI.talking && !CompanionUI.queued &&
     $('#settings').classList.contains('hidden') && bubble.classList.contains('hidden');
-  if (S.t < ambientCheck || !available()) return;
-  ambientCheck = S.t + 10;
-  if (window.petAPI && !await CompanionUI.call('ambientAllowed').catch(() => false)) return;
-  if (!available()) return;
-  lastAmbient = S.t;
-  say(text, null, dur, { kind: 'ambient' });
+  if (ambientPending || S.t < ambientNext || !available()) return;
+  ambientPending = true;
+  const userInput = S.lastInput;
+  const allowed = () => !window.petAPI || CompanionUI.call('ambientAllowed').catch(() => false);
+  try {
+    if (!await allowed() || !available()) return;
+    ambientNext = S.t + 30;
+    const [text, face, animation, ja] = idleMoment();
+    const opt = { kind: 'ambient', ja };
+    const buffer = await Voice.prepareAnimation(text, opt);
+    if (!available() || S.lastInput !== userInput || !await allowed() || !available() || S.lastInput !== userInput) return;
+    ambientNext = S.t + rand(minutes, minutes * 2) * 60;
+    startAnim(animation);
+    S.anim.ambient = true;
+    say(text, face, 2.5, { ...opt, buffer, voice: !!buffer });
+  } finally { ambientPending = false; }
 }
 // "…" while she thinks of an answer
 function think(sec = 25) {
@@ -850,17 +865,17 @@ const ANIMS = {
     cues: [[0.15, () => twitchEars(0)], [1.6, () => twitchEars(1)], [3.1, () => setFace('curious', 1.2)]] },
   hum: { dur: 5, f: u => { const b = Math.sin(u * Math.PI * 1.6), e = env(u, 0, 0.4, 4.4, 5);
       return { roll: 0.07 * b * e, gx: 0.25 * Math.sin(u * Math.PI * 0.8) * e, gy: -0.12 * e, hdy: 2.5 * Math.abs(b) * e, tail: 0.3 * b * e, eye: 0.6 * e }; },
-    cues: [[0, () => { setFace('enjoy', 4.6); ambientSay(pickLine(['♪～', '嗯嗯～♪', '啦啦啦～♪', '哼～哼哼♪']), null); }], [0.4, notes], [1.6, notes], [2.8, notes], [4, notes]] },
+    cues: [[0, () => setFace('enjoy', 4.6)], [0.4, notes], [1.6, notes], [2.8, notes], [4, notes]] },
   stretch: { dur: 3.6, f: u => { const s = env(u, 0.5, 1.1, 2.3, 3.0);
       return { sq: u < 0.5 ? -0.02 * env(u, 0, 0.2, 0.35, 0.5) : 0.035 * s, gy: -0.6 * s, roll: 0.05 * Math.sin(u * 3) * s, eye: s, flat: 0.3 * s, tail: 0.4 * s }; },
-    cues: [[0.45, () => setFace('yawn', 1.9)], [2.4, () => { ambientSay('呼啊～…', 'gentle', 1.6); twitchEars(); }]] },
+    cues: [[0.45, () => setFace('yawn', 1.9)], [2.4, () => twitchEars()]] },
   sneeze: { dur: 2.9, f: u => {
       if (u < 1.15) { const b = smoothstep(0, 1.1, u); return { gy: -0.4 * b, hdy: -3 * b, eye: 0.55 * b }; }
       const after = u - 1.15, k = Math.exp(-after * 2.5);
       return { gy: 0.45 * k, eye: after < 0.4 ? 1 : 0, hdx: Math.sin(after * 28) * 3 * smoothstep(0.5, 0.7, after) * k * 2 };
     },
-    cues: [[0.05, () => ambientSay('哈…哈……', 'troubled', 1.2)], [1.15, () => { ambientSay('啾！', 'closed', 0.6); S.squash.v -= 1.3; S.headDY.v += 150; twitchEars(); swish(1.4); kick(0.2); }],
-      [1.9, () => ambientSay(pickLine(['…失礼了。', '有人在说我坏话吗…', '呜，鼻子痒痒的…']), 'shy', 1.8)]] },
+    cues: [[0.05, () => setFace('troubled', 1.2)], [1.15, () => { setFace('closed', 0.6); S.squash.v -= 1.3; S.headDY.v += 150; twitchEars(); swish(1.4); kick(0.2); }],
+      [1.9, () => setFace('shy', 1.8)]] },
   tailPlay: { dur: 3.8, f: u => { const side = Math.sign(pose.rig.tailRoot[0] - 512) || 1, e = env(u, 0, 0.3, 3.2, 3.8);
       return { gx: side * 0.65 * e, gy: 0.5 * e, roll: side * 0.06 * e, tail: 0.5 * Math.sin(u * 7) * e }; },
     cues: [[0.1, () => setFace('curious', 2.6)], [0.6, () => swish(1.2)], [1.4, () => swish(1.4)], [2.2, () => swish(1)], [2.9, () => { setFace('happy', 1.2); kick(0.3); }]] },
@@ -868,10 +883,10 @@ const ANIMS = {
     cues: [[0.1, () => twitchEars(0)], [0.45, () => twitchEars(1)], [0.8, () => twitchEars(0)], [1.1, () => twitchEars(1)]] },
   peek: { dur: 3.2, f: u => { const e = env(u, 0, 0.5, 2.5, 3.2);
       return { gx: (S.gaze.active ? S.gaze.x : 0) * e, gy: 0.2 * e, hdy: 7 * e, roll: -0.08 * Math.sign(S.gaze.x || 1) * e }; },
-    cues: [[0.3, () => setFace('curious', 2.4)], [0.8, () => ambientSay(pickLine(['嗯？', '怎么啦？', '在忙什么呢？', '…（偷看）']), 'curious', 1.8)]] },
+    cues: [[0.3, () => setFace('curious', 2.4)]] },
   doze: { dur: 3.6, f: u => { const d = smoothstep(0, 2.4, u) * (u < 2.5 ? 1 : Math.exp(-(u - 2.5) * 6));
       return { gy: 0.55 * d, hdy: 7 * d, roll: 0.07 * d, eye: u < 2.5 ? 0.3 + 0.7 * d : 0 }; },
-    cues: [[0.2, () => setFace('sleepy', 2.3)], [2.5, () => { S.headDY.v -= 120; twitchEars(); setFace('surprised', 0.9); }], [3.2, () => ambientSay(pickLine(['…没睡！', '唔…差点睡着。']), 'troubled', 1.5)]] },
+    cues: [[0.2, () => setFace('sleepy', 2.3)], [2.5, () => { S.headDY.v -= 120; twitchEars(); setFace('surprised', 0.9); }], [3.2, () => setFace('troubled', 1.5)]] },
   bounce: { dur: 1.6, f: () => ({}),
     cues: [[0, () => setFace('happy', 1.6)], [0.05, () => { S.hopV = 300; S.squash.v += 1.2; }], [0.6, () => { S.hopV = 300; S.squash.v += 1.2; }], [1.0, () => emit('note', ...headTop(), 2, { size: 20 })]] },
   // waking from deep sleep: eyes flutter, startle, look around, a big stretch, then a word
@@ -882,7 +897,7 @@ const ANIMS = {
       return { sq: 0.035 * s, gy: -0.6 * s, eye: s, flat: 0.35 * s, tail: 0.5 * s, roll: 0.04 * Math.sin(u * 3) * s };
     },
     cues: [[0.55, () => { setFace('surprised', 0.9); S.headDY.v -= 120; kick(0.45); twitchEars(); emit('surprise', ...headTop(), 1, { life: 0.9, size: 30 }); }],
-      [1.4, () => setFace('yawn', 1.6)], [1.5, () => ambientSay('哈啊～…', null)], [3.2, () => { ambientSay(pickLine(LINES.wake), 'smile', 2.4); twitchEars(); swish(1); }]] },
+      [1.4, () => setFace('yawn', 1.6)], [3.2, () => { setFace('smile', 2.4); twitchEars(); swish(1); }]] },
   // only drowsy: a quick double blink and the ears come back up
   rouse: { dur: 1.2, f: u => ({ eye: u < 0.5 ? 0.6 * (1 - u / 0.5) + 0.4 * Math.max(0, Math.sin(u * 25)) : 0 }),
     cues: [[0.05, () => { S.headDY.v -= 50; twitchEars(); }], [0.5, () => setFace('curious', 0.8)]] },
@@ -917,11 +932,15 @@ function animFrame(t) {
   if (u > A.dur) { S.anim = null; return null; }
   return A.f(u);
 }
-function idleAnim() {
-  const after = Store.data.sleepAfter, drowsy = after > 0 && quietFor() > after * 0.4;
-  const W = [['lookAround', 3], ['hum', 2], ['stretch', 2], ['earFlick', 2], ['tailPlay', 2], ['peek', S.gaze.active ? 2 : 0], ['bounce', 1 + S.aff * 2], ['sneeze', 0.6], ['doze', drowsy ? 4 : 0]];
-  let r = Math.random() * W.reduce((s, w) => s + w[1], 0);
-  for (const [name, w] of W) if ((r -= w) <= 0) return startAnim(name);
+function idleMoment() {
+  return pick([
+    ['嗯？', 'curious', 'lookAround', 'ん？'],
+    ['哼～哼哼♪', 'enjoy', 'hum', 'ふんふん♪'],
+    ['呼啊～…', 'gentle', 'stretch', 'ふぁぁ……'],
+    ['唔……耳朵有点痒。', 'curious', 'earFlick', 'うぅ、耳がちょっとかゆいです。'],
+    ['尾巴怎么又动啦……', 'gentle', 'tailPlay', 'しっぽがまた動いてます……'],
+    ['嗯嗯～♪', 'happy', 'bounce', 'ふふっ♪'],
+  ]);
 }
 
 // ---------------------------------------------------------------- carrying her around
@@ -1105,16 +1124,9 @@ function idleTick() {
   // while recording she only twitches an ear or flicks her tail now and then
   if (Rec.on) { const r = Math.random(); if (!S.sleep && r < 0.4) r < 0.25 ? twitchEars(r < 0.12 ? 0 : 1) : swish(0.8); return; }
   const quiet = quietFor(), after = Store.data.sleepAfter;
-  if (after > 0 && S.sleep === 0 && quiet > after * 0.8) { S.sleep = 1; ambientSay(pickLine(LINES.yawn), 'yawn', 2.2); return; }
+  if (after > 0 && S.sleep === 0 && quiet > after * 0.8) { S.sleep = 1; setFace('yawn', 2.2); return; }
   if (after > 0 && S.sleep === 1 && quiet > after) { S.sleep = 2; return; }
-  if (S.sleep) return;
-  const r = Math.random();
-  if (r < 0.22) { S.look = { x: rand(-0.8, 0.8), y: rand(-0.4, 0.5), until: S.t + rand(1.5, 3) }; }
-  else if (r < 0.40) twitchEars(Math.random() < 0.5 ? 0 : 1);
-  else if (r < 0.55) swish(0.8);
-  else if (r < 0.70) { S.face.idleSem = pick(['neutral', 'neutral', 'smile', 'gentle']); }
-  else if (r < 0.82 && quiet > 8) { ambientSay(pickLine(LINES.idle), pick(['smile', 'gentle', 'neutral']), 2.5); }
-  else if (r < 0.88 && quiet > 18) { ambientSay(pickLine(LINES.yawn), 'yawn', 2); }
+  if (!S.sleep) void ambientMoment();
 }
 
 // ============================================================================
@@ -1181,11 +1193,6 @@ function frame() {
     const sub = 3; for (let i = 0; i < sub; i++) simulate(dt / sub);
     idleTimer -= dt; if (idleTimer <= 0) { idleTimer = rand(4, 8); idleTick(); }
     if (S.lovePending && !S.drag && !S.carry && !S.switching) { S.lovePending = false; S.sleep = 0; S.angryUntil = 0; startAnim('love'); }
-    // every so often she acts out a little something by herself
-    if (S.t > S.animNext) {
-      S.animNext = S.t + rand(14, 28);
-      if (S.opt.idle && !Rec.on && !S.anim && !S.drag && !S.sleep && !S.switching && S.talkUntil < S.t && S.angryUntil < S.t && bubble.classList.contains('hidden')) idleAnim();
-    }
   }
   render(dt);
   requestAnimationFrame(frame);

@@ -50,7 +50,7 @@ const server = http.createServer((req, res) => {
       }
       const proactive = payload.messages[0].content.includes('这是主动打招呼');
       if (proactive) proactiveBody = payload; else chatBody = payload;
-      const output = { reply: proactive ? '生成的测试问候' : '正常聊天回复', emotion: 'happy' };
+      const output = { reply: proactive ? '生成的测试问候' : '正常聊天回复', emotion: 'happy', action: 'notes' };
       res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) } }] }));
     }
   });
@@ -160,12 +160,14 @@ async function run() {
 
   // Disable global memory while separately permitting memory for proactive dialogue.
   await ipc('memory', 'save', { content: '永远不要发送的测试记忆', type: '兴趣', tags: '' });
+  await runJS("const observedActions = []; const originalAction = doAction; doAction = action => { observedActions.push(action); originalAction(action); }; true");
   await ipc('companion', 'configure', { enabled: true, frequency: 'frequent', min: 10, limit: 2, quietFrom: '00:00', quietTo: '00:00',
     ai: true, memory: true, voice: false });
   now += 21 * 60000;
   await until(() => proactiveBody);
   assert.doesNotMatch(JSON.stringify(proactiveBody), /永远不要发送的测试记忆/);
   await until(() => runJS("document.querySelector('#bubbleText').textContent.includes('生成的测试问候')"));
+  assert.equal(await runJS('observedActions.at(-1)'), 'notes');
 
   await runJS(`petAPI.setSettings({baseUrl: ${JSON.stringify(base + '/chat')}, model:'synth-chat', kind:'openai'})`);
   await ipc('companion', 'configure', { enabled: true, frequency: 'frequent', min: 10, limit: 8, quietFrom: '00:00', quietTo: '00:00',
