@@ -91,6 +91,7 @@ class VisionFlow {
     this.latest = '';
     this.error = '';
     this.failure = false;
+    this.lastProactiveSample = false;
     this.lastRequest = -Infinity;
     this.generation = 0;
     this.busy = false;
@@ -98,7 +99,7 @@ class VisionFlow {
 
   status() {
     const session = this.observation;
-    return { latest: this.latest, error: this.error, failure: this.failure, busy: this.busy, hasPreview: !!this.preview, observation: session &&
+    return { latest: this.latest, error: this.error, failure: this.failure, lastProactiveSample: this.lastProactiveSample, busy: this.busy, hasPreview: !!this.preview, observation: session &&
       { expires: session.expires, name: session.source.name, next: session.next, mode: session.mode, every: session.every } };
   }
 
@@ -109,6 +110,7 @@ class VisionFlow {
     this.observation = null;
     this.error = reason;
     this.failure = failure;
+    this.lastProactiveSample = false;
     this.notify(this.status());
   }
 
@@ -208,17 +210,23 @@ class VisionFlow {
     this.busy = true;
     this.error = '';
     this.failure = false;
+    this.lastProactiveSample = false;
     this.notify(this.status());
     try {
       const jpeg = await this.capture(session.source, session.config, true);
       if (!jpeg || !valid()) return null;
       const text = await this.run({ ...session.config, timeout: Math.min(session.config.timeout, 8000) }, jpeg,
-        '用一句话概括画面里的公开活动或主题，略去姓名、消息原文、凭据及其他私人信息。不确定就直说。', session.expires);
+        '用一句话说出一个明确可见、非敏感、适合聊天的画面细节。略去姓名、消息原文、凭据及其他私人信息。画面不清楚或没有合适细节时，只输出：无可用画面主题。', session.expires);
       if (!valid()) return null;
       if (isPrivate(text, session.config.privateWords ?? PRIVATE_WORDS)) {
         this.error = '识别结果命中隐私关键词，已跳过转发';
         return null;
       }
+      if (!text.trim() || /^无可用画面主题[。.!！\s]*$/u.test(text.trim())) {
+        this.error = '本次未识别到可用于闲聊的画面内容';
+        return null;
+      }
+      this.lastProactiveSample = true;
       return text.slice(0, 400);
     } catch (_) {
       if (this.observation === session) {

@@ -113,6 +113,21 @@ test('a temporary vision failure keeps the authorized cadence for the next sampl
   assert.equal(service.status().failure, false);
 });
 
+test('every-chat observation distinguishes unsuitable images from a usable topic without retaining the description', async () => {
+  let now = 0, text = '无可用画面主题。';
+  const service = new VisionFlow({ now: () => now, capture: async () => picture, request: async () => text });
+  service.activateProactive('w', source, config, { every: 1, chat: 'chat' });
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  assert.match(service.status().error, /未识别到/);
+  assert.equal(service.status().lastProactiveSample, false);
+  service.markSpoken('w');
+  now += minute;
+  text = '画面里是一张地图';
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), text);
+  assert.equal(service.status().lastProactiveSample, true);
+  assert.equal(service.status().latest, '');
+});
+
 test('stopping during capture or network quarantines late results', async () => {
   let captureFinish;
   const pending = new VisionFlow({ capture: () => new Promise(resolve => { captureFinish = resolve; }) });

@@ -50,7 +50,9 @@ const server = http.createServer((req, res) => {
       }
       const proactive = payload.messages[0].content.includes('这是主动打招呼');
       if (proactive) proactiveBody = payload; else chatBody = payload;
-      const output = { reply: proactive ? '生成的测试问候' : '正常聊天回复', emotion: 'happy', action: 'notes' };
+      const screen = proactive && payload.messages[0].content.includes('合成画面的视觉描述');
+      const output = { reply: screen ? '我看到屏幕上有一张地图，想聊聊路线吗？' : proactive && privateWindow ? '我看到屏幕上有一份乐谱。'
+        : proactive ? '生成的测试问候' : '正常聊天回复', emotion: 'happy', action: 'notes' };
       res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) } }] }));
     }
   });
@@ -198,21 +200,21 @@ async function run() {
     clockOffset += 31000;
     await until(() => proactiveBody);
     assert.equal(JSON.stringify(proactiveBody).includes('合成画面的视觉描述'), expected);
+    if (expected) assert.match(proactiveBody.messages[0].content, /以其中一个明确、非敏感的可见细节为主话题/);
     await until(() => runJS('!CompanionUI.talking'));
   }
   assert.equal(shots, shotsBefore + 1);
   assert.equal(sent, sentBefore + 1);
   assert.equal((await call('state')).latest, '');
+  assert.equal((await call('state')).lastProactiveSample, true);
   assert.equal(await runJS("document.querySelector('#msgs').textContent.includes('生成的测试问候')"), true);
   const proactiveHistory = (await ipc('memory', 'history')).filter(row => row.conversation.startsWith('proactive:'));
   assert.ok(proactiveHistory.some(row => row.text === '生成的测试问候'));
+  assert.equal(proactiveHistory.filter(row => row.text.startsWith('我看到屏幕上有一张地图')).length, 1);
   assert.ok(proactiveHistory.every(row => !row.text.includes('合成画面的视觉描述')));
   chatBody = undefined;
-  await runJS(`(async () => {
-    AI.history = [{role:'assistant', proactive:true, content:JSON.stringify({reply:'生成的测试问候'})}];
-    await Chat.send('你刚才说的是什么？');
-  })()`);
-  assert.match(JSON.stringify(chatBody), /生成的测试问候/);
+  await runJS("Chat.send('你刚才说的是什么？')");
+  assert.match(JSON.stringify(chatBody), /我看到屏幕上有一张地图/);
   assert.doesNotMatch(JSON.stringify(chatBody), /合成画面的视觉描述/);
   powerMonitor.emit('lock-screen');
   assert.equal((await call('state')).observation, null);
@@ -231,6 +233,7 @@ async function run() {
   assert.equal(sent, sentBefore + 1, 'the private window prevents upload after allowing the same grant to resume');
   assert.equal(shots, shotsBefore + 1);
   assert.match((await call('state')).error, /隐私窗口/);
+  assert.ok((await ipc('memory', 'history')).every(row => !row.text.includes('我看到屏幕上有一份乐谱')));
   await call('forget');
   assert.equal((await call('state')).savedSource, null);
   assert.equal(fs.existsSync(path.join(profile, 'proactive-screen.json')), false);

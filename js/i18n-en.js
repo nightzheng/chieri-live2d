@@ -465,6 +465,8 @@ Ollama 本地|Local Ollama
 已取消授权。|Permission canceled.
 已撤销主动观察授权|Proactive screen permission revoked
 视觉会话已停止|Vision session stopped
+上次主动观察已获得画面内容|The last proactive capture produced a screen description
+本次未识别到可用于闲聊的画面内容|No suitable screen details were found for this chat
 已清除视觉上下文|Vision context cleared
 已保存到长期记忆|Saved to long-term memory
 没有可分享的来源。|No shareable sources.

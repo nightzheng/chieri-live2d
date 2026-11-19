@@ -214,14 +214,17 @@ const CompanionUI = {
     try {
       if (options.ai && AI.ready()) {
         try {
-          const out = AI.parse(await AI.complete(AI.systemPrompt(aiState()) +
-            '\n这是主动打招呼。只说一句，避免重复上次主题。若附有本次授权的屏幕描述，可以自然提及其中的公开主题；否则以' + category + '为主题。不要猜测用户的情绪、健康或屏幕内容。',
-          [{ role: 'user', content: '请在' + period + '和我轻松打个招呼。' }],
-          { timeout: 15000, maxTokens: 240, proactive: options.ticket }));
-          const unsupported = /(?:我|刚)(?:刚才|刚刚)?(?:看见|看到|看着|注意到你正在)|你(?:一定|肯定|明显|看起来)(?:很|有点)?(?:累|难过|疲惫|生病|不舒服)/;
-          if (out.reply !== '……' && out.reply !== this.lastLine && !unsupported.test(out.reply)) {
+          const { replyText, usedScreen } = await AI.complete(AI.systemPrompt(aiState()) +
+            '\n这是主动打招呼。只说一句，避免重复上次主题。没有可用屏幕描述时，以' + category + '为备用主题。不要猜测用户的情绪、健康或屏幕内容。',
+          [{ role: 'user', content: '请自然地跟我开启一个话题。' }],
+          { timeout: 15000, maxTokens: 240, proactive: options.ticket });
+          const out = AI.parse(replyText);
+          const screenClaim = /(?:我|刚)(?:刚才|刚刚)?(?:看见|看到|看着|注意到你正在)|(?:\bI (?:can see|see|(?:just )?saw|notice(?:d)? you)|on your screen)/i;
+          const stateGuess = /你(?:一定|肯定|明显|看起来)(?:很|有点)?(?:累|难过|疲惫|生病|不舒服)|you (?:must be|(?:look|seem)(?: like you are)?) (?:tired|sad|sick|exhausted|unwell)/i;
+          if (out.reply !== '……' && out.reply !== this.lastLine && !stateGuess.test(out.reply) &&
+              (usedScreen || !screenClaim.test(out.reply))) {
             reply = out.reply.slice(0, 100);
-            ja = out.ja || 'こんにちは。少しお話ししませんか？';
+            ja = out.ja;
             emotion = out.emotion || emotion;
             action = Object.hasOwn(AI_ANIMATIONS, out.action) || ['hop', 'swish', 'twitch', 'blush', 'hearts', 'notes'].includes(out.action) ? out.action : 'none';
           }

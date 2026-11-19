@@ -35,7 +35,8 @@ const VisionUI = {
       this.observationFeedback = proactive ? '#pvStatus' : '#visTimedFeedback';
       const mins = Math.max(0, Math.ceil((state.observation.expires - (performance.timeOrigin + performance.now())) / 60000));
       Settings.feedback(this.observationFeedback, state.error || (proactive
-        ? `已授权 ${state.observation.name}，每 ${state.observation.every} 次主动闲聊查看一次。`
+        ? state.lastProactiveSample ? I18n.text('上次主动观察已获得画面内容')
+          : `已授权 ${state.observation.name}，每 ${state.observation.every} 次主动闲聊查看一次。`
         : `正在观察 ${state.observation.name}，剩余约 ${mins} 分钟。`), state.error ? 'error' : 'ok');
     } else if (this.observationFeedback) {
       Settings.feedback(this.observationFeedback, state.error, state.failure ? 'error' : '');

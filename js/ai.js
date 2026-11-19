@@ -218,26 +218,29 @@ ${s.persona}
       req = { url: s.baseUrl.replace(/\/+$/, '') + '/chat/completions', headers,
         body: { model: s.model, max_tokens: maxTokens, temperature, messages: [{ role: 'system', content: sys }, ...msgs] } };
     }
-    const res = await this.post(req, timeout, memory, proactive);
+    const { body: res, usedScreen } = await this.post(req, timeout, memory, proactive);
+    let replyText;
     if (s.kind === 'anthropic') {
       if (res.stop_reason === 'refusal') throw new Error('模型拒绝了这次请求');
-      return (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+      replyText = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    } else {
+      replyText = res.choices?.[0]?.message?.content || '';
     }
-    return res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content || '';
+    return proactive ? { replyText, usedScreen } : replyText;
   },
 
   async post(req, timeout, memory, proactive) {
     if (window.petAPI) {
       const r = await window.petAPI.aiRequest({ url: req.url, headers: req.headers, body: JSON.stringify(req.body), timeout, memory, proactive });
       if (!r.ok) throw new Error(r.error || `HTTP ${r.status}: ${String(r.text || '').slice(0, 200)}`);
-      return JSON.parse(r.text);
+      return { body: JSON.parse(r.text), usedScreen: proactive && r.usedScreen === true };
     }
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout);
     try {
       const r = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal: ctl.signal });
       const t = await r.text();
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${t.slice(0, 200)}`);
-      return JSON.parse(t);
+      return { body: JSON.parse(t), usedScreen: false };
     } catch (e) { throw e.name === 'AbortError' ? new Error('请求超时') : e; } finally { clearTimeout(timer); }
   },
 
