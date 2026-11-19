@@ -93,9 +93,9 @@ const CompanionUI = {
   },
   async loadOptions() {
     const p = await this.call('options');
-    for (const [key, value] of Object.entries({ Enabled: p.enabled, AI: p.ai, Memory: p.memory, Voice: p.voice, Adaptive: p.adaptive, Vision: p.vision })) $('#p' + key).checked = value;
+    for (const [key, value] of Object.entries({ Enabled: p.enabled, AI: p.ai, Preset: p.preset, Memory: p.memory, Voice: p.voice, Adaptive: p.adaptive, Vision: p.vision })) $('#p' + key).checked = value;
     for (const [key, value] of Object.entries({ Frequency: p.frequency, Min: p.min, QuietFrom: p.quietFrom, QuietTo: p.quietTo,
-      Limit: p.limit, Strength: p.strength, Manual: p.manual, VisionEvery: p.visionEvery })) {
+      Limit: p.limit, PresetMin: p.presetMin, PresetLimit: p.presetLimit, Strength: p.strength, Manual: p.manual, VisionEvery: p.visionEvery })) {
       $('#p' + key).value = value;
     }
     $('#pFrequency').onchange();
@@ -112,6 +112,7 @@ const CompanionUI = {
     return {
       enabled: $('#pEnabled').checked, ai: $('#pAI').checked, memory: $('#pMemory').checked, voice: $('#pVoice').checked,
       frequency: $('#pFrequency').value, min: +$('#pMin').value, limit: +$('#pLimit').value,
+      preset: $('#pPreset').checked, presetMin: +$('#pPresetMin').value, presetLimit: +$('#pPresetLimit').value,
       quietFrom: $('#pQuietFrom').value, quietTo: $('#pQuietTo').value,
       adaptive: $('#pAdaptive').checked, strength: $('#pStrength').value, manual: $('#pManual').value,
       vision: $('#pVision').checked, visionEvery: +$('#pVisionEvery').value,
@@ -169,7 +170,7 @@ const CompanionUI = {
     try {
       if (this.queued && !this.reminderBusy()) { this.deliver(this.queued); this.queued = null; }
       const response = await this.call('poll', { busy: this.reminderBusy() || !!this.queued, recording: Rec.on || this.talking,
-        proactiveBusy: this.busy() });
+        proactiveBusy: this.busy(), aiReady: AI.ready() });
       if (response?.missed) toast(`错过了 ${response.missed} 条提醒，可在「提醒与日程」查看`, 5500);
       if (response?.reminder) this.queued = response.reminder;
       if (response?.wellness) this.deliverWellness(response.wellness);
@@ -209,7 +210,7 @@ const CompanionUI = {
       ['问候', greeting, VOICE_JA[greeting]],
     ].filter(([category]) => category !== this.lastCategory);
     let [category, reply, ja] = pick(choices);
-    let emotion = 'gentle', action = { 休息: 'swish', 话题: 'twitch', 问候: 'swish' }[category];
+    let emotion = 'gentle', action = { 休息: 'stretch', 话题: 'earFlick', 问候: 'swish' }[category];
     try {
       if (options.ai && AI.ready()) {
         try {
@@ -222,7 +223,7 @@ const CompanionUI = {
             reply = out.reply.slice(0, 100);
             ja = out.ja || 'こんにちは。少しお話ししませんか？';
             emotion = out.emotion || emotion;
-            if (['hop', 'swish', 'twitch', 'blush', 'hearts', 'notes'].includes(out.action)) action = out.action;
+            action = Object.hasOwn(AI_ANIMATIONS, out.action) || ['hop', 'swish', 'twitch', 'blush', 'hearts', 'notes'].includes(out.action) ? out.action : 'none';
           }
         } catch (_) {}
       }

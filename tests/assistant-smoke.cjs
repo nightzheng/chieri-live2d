@@ -160,6 +160,13 @@ async function run() {
 
   // Disable global memory while separately permitting memory for proactive dialogue.
   await ipc('memory', 'save', { content: '永远不要发送的测试记忆', type: '兴趣', tags: '' });
+  const parseAction = (reply, action) => runJS(`AI.parse(${JSON.stringify(JSON.stringify({ reply, action }))}).action`);
+  assert.equal(await parseAction('Take it easy. (stretches her arms)', 'none'), 'stretch');
+  assert.equal(await parseAction('（轻轻地摇了摇尾巴）我有在听。', 'none'), 'swish');
+  assert.equal(await parseAction('你也伸个懒腰吧。', 'toString'), 'none');
+  assert.equal(await parseAction('Try this. (you stretch)', 'none'), 'none');
+  assert.equal(await parseAction('（探头）你好呀。', 'curtsy'), 'peek');
+  assert.equal(await runJS("S.anim = null; S.sleep = 0; doAction('stretch'); S.anim?.name"), 'stretch');
   await runJS("const observedActions = []; const originalAction = doAction; doAction = action => { observedActions.push(action); originalAction(action); }; true");
   await ipc('companion', 'configure', { enabled: true, frequency: 'frequent', min: 10, limit: 2, quietFrom: '00:00', quietTo: '00:00',
     ai: true, memory: true, voice: false });

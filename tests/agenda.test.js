@@ -95,7 +95,7 @@ test('P01–P04 rate, quiet windows, interaction cooldown, recording, and audio 
   const p = new Proactive(() => store.open(), () => 0.5);
   const request = { now, zone, idle: 180000, busy: false, locked: false, recording: false };
   assert.equal(p.claim(request), null);
-  p.configure({ ...p.options(), enabled: true, frequency: 'frequent', limit: 1 }, now);
+  p.configure({ ...p.options(), enabled: true, presetMin: 10, presetLimit: 1 }, now);
   assert.equal(p.claim({ ...request, now: now + 899999 }), null);
   assert.equal(p.claim({ ...request, now: now + 900000, busy: true }), null);
   assert.equal(p.claim({ ...request, now: now + 900000, idle: 50 }), null);
@@ -105,6 +105,38 @@ test('P01–P04 rate, quiet windows, interaction cooldown, recording, and audio 
   assert.equal(quiet('23:30', p.options()), true);
   assert.equal(quiet('07:59', p.options()), true);
   assert.equal(quiet('08:00', p.options()), false);
+});
+
+test('AI and preset dialogue retain independent schedules and budgets', t => {
+  const { store } = data(t);
+  const p = new Proactive(() => store.open(), () => 0);
+  const at = (minutes, extra = {}) => ({ now: now + minutes * 60000, zone, idle: Infinity, ...extra });
+  p.configure({ ...p.options(), enabled: true, ai: true, preset: true, frequency: 'frequent', limit: 60,
+    presetMin: 10, presetLimit: 1, adaptive: false }, now);
+  assert.deepEqual(p.claim(at(10)), { ai: true, voice: false });
+  p.spoken(at(10).now, 'ai');
+  assert.equal(p.claim(at(10.5)), null);
+  assert.deepEqual(p.claim(at(11)), { ai: false, voice: false });
+  p.spoken(at(11).now, 'preset');
+  assert.equal(p.claim(at(20, { aiReady: false })), null);
+  assert.deepEqual(p.claim(at(20)), { ai: true, voice: false });
+  const reopened = new Proactive(() => store.open(), () => 0);
+  assert.equal(reopened.claim(at(21)), null);
+  assert.deepEqual(reopened.claim(at(30)), { ai: true, voice: false });
+});
+
+test('legacy preset options and accrued cooldown keep their original timing and daily count', t => {
+  const { store } = data(t);
+  const p = new Proactive(() => store.open(), () => 0);
+  p.write('options', { enabled: true, ai: false, frequency: 'medium', min: 30, limit: 1 });
+  p.write('state', { next: now + 1200000, interval: 1200000, sent: [now] });
+  assert.equal(p.options().presetMin, 20);
+  assert.equal(p.options().presetLimit, 1);
+  assert.equal(p.options().limit, 12);
+  p.configure({ ...p.options(), ai: true, frequency: 'frequent' }, now);
+  assert.equal(p.read('state', {}).streams.preset.next, now + 1200000);
+  assert.equal(p.claim({ now: now + 1200000, zone, aiReady: false }), null);
+  assert.deepEqual(p.claim({ now: now + 1200000, zone }), { ai: true, voice: false });
 });
 
 test('D01 schema v1 upgrades transactionally with existing messages and memory', t => {

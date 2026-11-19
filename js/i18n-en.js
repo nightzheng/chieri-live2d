@@ -194,6 +194,12 @@ CPU（很慢）|CPU (slow)
 待处理及错过的提醒|Pending and missed reminders
 所有提醒|All reminders
 开启主动闲聊|Enable proactive chat
+开启预设台词与动作|Enable preset lines and actions
+预设台词最小间隔（分钟）|Minimum preset interval (minutes)
+预设台词每日上限|Daily preset limit
+预设台词通常在设定间隔的 1–2 倍后触发，和 AI 闲聊分别计时。|Preset lines use a random interval of 1–2 times the minimum and run on a separate timer from AI chat.
+AI 闲聊频率|AI chat frequency
+AI 闲聊每日上限|Daily AI chat limit
 闲聊频率|Chat interval
 偶尔（约 45–90 分钟）|Occasionally (45–90 min)
 适中（约 20–40 分钟）|Moderate (20–40 min)

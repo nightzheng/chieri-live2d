@@ -6,15 +6,28 @@ const MINUTE = 60000;
 const LIMITS = { occasional: [45, 90], medium: [20, 40], frequent: [10, 20] };
 const VISION_INTERVALS = [1, 2, 3, 5, 10];
 const DEFAULTS = { enabled: false, frequency: 'occasional', min: 30, quietFrom: '23:00', quietTo: '08:00',
-  limit: 4, ai: false, memory: false, voice: false, adaptive: true, strength: 'medium', manual: 'normal', vision: false, visionEvery: 3 };
+  limit: 12, ai: false, preset: true, presetMin: 45, presetLimit: 4, memory: false, voice: false,
+  adaptive: true, strength: 'medium', manual: 'normal', vision: false, visionEvery: 3 };
+const STREAMS = ['ai', 'preset'];
+
+function compatibleOptions(options) {
+  if (typeof options !== 'object' || Array.isArray(options)) throw new Error('主动互动设置无效');
+  if ('preset' in options || !Object.keys(options).length) return { ...DEFAULTS, ...options };
+  return { ...DEFAULTS, ...options, preset: !options.ai,
+    presetMin: LIMITS[options.frequency]?.[0] ?? options.min ?? DEFAULTS.presetMin,
+    presetLimit: options.ai ? DEFAULTS.presetLimit : options.limit ?? DEFAULTS.presetLimit,
+    limit: options.ai ? options.limit ?? DEFAULTS.limit : DEFAULTS.limit };
+}
 
 function validOptions(options) {
-  options = { ...DEFAULTS, ...options };
-  if (!options || !['enabled', 'ai', 'memory', 'voice', 'vision'].every(k => typeof options[k] === 'boolean') ||
+  options = compatibleOptions(options ?? {});
+  if (!['enabled', 'ai', 'preset', 'memory', 'voice', 'vision'].every(k => typeof options[k] === 'boolean') ||
     !VISION_INTERVALS.includes(options.visionEvery) ||
     ![...Object.keys(LIMITS), 'custom'].includes(options.frequency) || !validTime(options.quietFrom) || !validTime(options.quietTo) ||
     !Number.isInteger(options.min) || options.min < 10 || options.min > 1440 ||
-    !Number.isInteger(options.limit) || options.limit < 1 || options.limit > 24 ||
+    !Number.isInteger(options.limit) || options.limit < 1 || options.limit > 60 ||
+    !Number.isInteger(options.presetMin) || options.presetMin < 10 || options.presetMin > 1440 ||
+    !Number.isInteger(options.presetLimit) || options.presetLimit < 1 || options.presetLimit > 24 ||
     !['gentle','medium','strong'].includes(options.strength) || !['normal','quiet','focus'].includes(options.manual) ||
     typeof options.adaptive !== 'boolean') {
     throw new Error('主动互动设置无效');
@@ -30,6 +43,10 @@ function quiet(time, { quietFrom, quietTo }) {
 function delay(options, random) {
   const [min, max] = LIMITS[options.frequency] || [options.min, Math.min(options.min * 2, 2880)];
   return MINUTE * (min + (max - min) * random());
+}
+
+function streamTiming(options, stream) {
+  return stream === 'ai' ? options : { frequency: 'custom', min: options.presetMin, limit: options.presetLimit };
 }
 
 function command(text) {
@@ -54,7 +71,10 @@ class Proactive {
     this.reset();
   }
 
-  reset() { this.session = { chat: 0, touch: 0, latest: 0, waiting: 0, ignored: 0, until: 0, focus: '' }; }
+  reset() {
+    this.session = { chat: 0, touch: 0, until: 0, focus: '' };
+    for (const stream of STREAMS) this.session[stream] = { latest: 0, waiting: 0, ignored: 0 };
+  }
 
   read(key, initial) {
     const row = this.open().prepare('SELECT value FROM proactive WHERE key = ?').get(key);
@@ -66,14 +86,23 @@ class Proactive {
       .run(key, JSON.stringify(value));
   }
 
-  options() { return { ...DEFAULTS, ...this.read('options', {}) }; }
+  options() { return compatibleOptions(this.read('options', {})); }
+
+  state(options) {
+    const { next, interval, sent, ...state } = this.read('state', {});
+    state.streams ??= { [options.ai ? 'ai' : 'preset']: { next, interval, sent } };
+    return state;
+  }
 
   feedback(kind, now) {
     const session = this.session;
     if (kind === 'chat') {
-      if (session.waiting && now - session.waiting <= 5 * MINUTE) {
-        session.ignored = 0;
-        session.waiting = 0;
+      for (const stream of STREAMS) {
+        const s = session[stream];
+        if (s.waiting && now - s.waiting <= 5 * MINUTE) {
+          s.ignored = 0;
+          s.waiting = 0;
+        }
       }
       session.chat = now;
     } else if (kind === 'touch') session.touch = now;
@@ -85,19 +114,22 @@ class Proactive {
     this.session.until = mode === 'normal' ? 0 : now + minutes * MINUTE;
   }
 
-  spoken(now) {
-    this.session.latest = this.session.waiting = now;
+  spoken(now, stream = 'preset') {
+    this.session[stream].latest = this.session[stream].waiting = now;
     const state = this.read('state', {});
     this.write('state', { ...state, lastSpoken: now });
   }
 
   status({ now, zone, idle = Infinity, busy, locked, recording, reminder }, options = this.options()) {
     const s = this.session;
-    if (s.waiting && now - s.waiting > 5 * MINUTE) {
-      s.ignored = Math.min(6, s.ignored + 1);
-      s.waiting = 0;
+    for (const stream of STREAMS) {
+      const response = s[stream];
+      if (response.waiting && now - response.waiting > 5 * MINUTE) {
+        response.ignored = Math.min(6, response.ignored + 1);
+        response.waiting = 0;
+      }
+      if (response.latest && now - response.latest > 24 * 60 * MINUTE) response.ignored = 0;
     }
-    if (s.latest && now - s.latest > 24 * 60 * MINUTE) s.ignored = 0;
     const mode = s.until > now ? s.focus : options.manual;
     const lastSpoken = this.read('state', {}).lastSpoken ?? null;
     const result = (state, reason, blocked = true) => ({ state, reason, blocked, lastSpoken });
@@ -109,8 +141,10 @@ class Proactive {
     if (busy || idle < 3 * MINUTE || (s.chat && now - s.chat < 3 * MINUTE) || (s.touch && now - s.touch < 3 * MINUTE)) {
       return result('活跃交流', '正在处理交互、语音或处于互动冷却期');
     }
-    if (!options.enabled) return result('安静', '主动闲聊已关闭');
-    if (options.adaptive && s.ignored >= 2) return result('低打扰', '近期主动发言未获得聊天回应，正在延长间隔', false);
+    if (!options.enabled || !STREAMS.some(stream => options[stream])) return result('安静', '主动闲聊已关闭');
+    if (options.adaptive && STREAMS.some(stream => options[stream] && s[stream].ignored >= 2)) {
+      return result('低打扰', '近期主动发言未获得聊天回应，正在延长间隔', false);
+    }
     return result('日常', '按设置的间隔等待主动发言', false);
   }
 
@@ -118,31 +152,52 @@ class Proactive {
     const next = validOptions(options), db = this.open();
     db.exec('BEGIN IMMEDIATE');
     try {
+      const previous = this.options(), state = this.state(previous);
+      for (const stream of STREAMS) {
+        const clock = state.streams[stream] ??= {};
+        const before = streamTiming(previous, stream), after = streamTiming(next, stream);
+        if (next.enabled && next[stream] && (!previous.enabled || !previous[stream] ||
+          before.frequency !== after.frequency || before.min !== after.min || !Number.isFinite(clock.next))) {
+          clock.interval = delay(after, this.random);
+          clock.next = now + clock.interval;
+        }
+      }
       this.write('options', next);
-      const state = this.read('state', {});
-      this.write('state', { ...state, next: now + delay(next, this.random) });
+      this.write('state', state);
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
     return next;
   }
 
-  claim({ now, zone, idle, busy, locked, recording }) {
+  claim({ now, zone, idle, busy, locked, recording, aiReady = true }) {
     const options = this.options();
     if (this.status({ now, zone, idle, busy, locked, recording }, options).blocked) return null;
     const { day } = calendar(now, zone);
-    const state = this.read('state', {});
-    if (!Number.isFinite(state.next)) {
-      this.write('state', { ...state, next: now + delay(options, this.random) });
-      return null;
-    }
-    const recent = (state.sent || []).filter(at => now - at < 48 * 60 * MINUTE);
-    const s = this.session;
+    const state = this.state(options);
+    if (now - (state.lastSpoken ?? -Infinity) < MINUTE) return null;
     const strength = { gentle: .35, medium: .65, strong: 1 }[options.strength];
-    const backoff = options.adaptive && s.ignored >= 2 ? (state.interval || delay(options, () => 0)) * Math.min(3, (s.ignored - 1) * strength) : 0;
-    if (state.next + backoff > now || recent.filter(at => calendar(at, zone).day === day).length >= options.limit) return null;
-    const interval = delay(options, this.random);
-    this.write('state', { ...state, next: now + interval, interval, sent: [...recent, now] });
-    return options;
+    let changed = false;
+    for (const stream of STREAMS) {
+      if (!options[stream] || (stream === 'ai' && !aiReady)) continue;
+      const timing = streamTiming(options, stream), clock = state.streams[stream] ??= {};
+      if (!Number.isFinite(clock.next)) {
+        clock.interval = delay(timing, this.random);
+        clock.next = now + clock.interval;
+        changed = true;
+        continue;
+      }
+      const recent = (clock.sent || []).filter(at => now - at < 48 * 60 * MINUTE);
+      const ignored = this.session[stream].ignored;
+      const backoff = options.adaptive && ignored >= 2 ? (clock.interval || delay(timing, () => 0)) * Math.min(3, (ignored - 1) * strength) : 0;
+      if (clock.next + backoff > now || recent.filter(at => calendar(at, zone).day === day).length >= timing.limit) continue;
+      clock.interval = delay(timing, this.random);
+      clock.next = now + clock.interval;
+      clock.sent = [...recent, now];
+      this.write('state', state);
+      return { ai: stream === 'ai', voice: options.voice };
+    }
+    if (changed) this.write('state', state);
+    return null;
   }
 }
 

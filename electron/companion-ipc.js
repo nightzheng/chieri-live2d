@@ -139,7 +139,9 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
           detail: frequency === 'custom' ? '最小间隔 ' + min + ' 分钟' : frequency === 'medium' ? '20–40 分钟' : '45–90 分钟',
           buttons: ['取消', '保存'], defaultId: 0, cancelId: 0 });
         if (result.response !== 1 || win.isDestroyed()) return '未更改主动互动设置。';
-        proactive.configure({ ...proactive.options(), enabled: increase || options.enabled, frequency, min }, Date.now());
+        const current = proactive.options();
+        const presetMin = increase ? 45 : Math.min(1440, current.presetMin + 15);
+        proactive.configure({ ...current, enabled: increase || current.enabled, frequency, min, presetMin }, Date.now());
         return '已保存新的主动互动频率。';
       }
       proactive.temporary(intent.mode, intent.minutes, now);
@@ -155,10 +157,12 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
         !proactive.status(presence()).blocked;
     },
     spoken(win, id) {
-      if (delivery?.win !== win || delivery.id !== id || proactive.status(presence()).blocked) return false;
+      const now = Date.now();
+      if (delivery?.win !== win || delivery.id !== id || now >= delivery.expires || win !== activeWindow() || proactive.status(presence()).blocked) return false;
+      const { ai } = delivery;
       delivery = null;
-      proactive.spoken(Date.now());
-      onSpoken(win);
+      proactive.spoken(now, ai ? 'ai' : 'preset');
+      if (ai) onSpoken(win);
       return true;
     },
     poll(win, value) {
@@ -185,9 +189,11 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
           return { wellness: wellbeing, missed };
         }
       }
-      const next = proactive.claim({ now, zone: zone(), idle: now - activity, busy: value.proactiveBusy, locked, recording: value.recording || !!settings().rec?.on });
+      if (delivery) return missed ? { missed } : null;
+      const next = proactive.claim({ now, zone: zone(), idle: now - activity, busy: value.proactiveBusy, locked,
+        recording: value.recording || !!settings().rec?.on, aiReady: value.aiReady !== false });
       if (!next) return missed ? { missed } : null;
-      ticket = { id: randomUUID(), win, expires: now + 20000 };
+      ticket = { id: randomUUID(), win, ai: next.ai, expires: now + 20000 };
       delivery = { ...ticket, expires: now + 30000 };
       return { proactive: { ai: next.ai, voice: next.voice, ticket: ticket.id }, missed };
     },
@@ -204,7 +210,7 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
       return options.enabled && options.ai && options.vision ? options : null;
     },
     useTicket(win, id) {
-      if (!ticket || ticket.win !== win || ticket.id !== id || ticket.expires < Date.now() || proactive.status(presence()).blocked) return null;
+      if (!ticket?.ai || ticket.win !== win || ticket.id !== id || ticket.expires < Date.now() || proactive.status(presence()).blocked) return null;
       ticket = null;
       const options = proactive.options();
       return options.enabled && options.ai ? { memory: options.memory, vision: options.vision,

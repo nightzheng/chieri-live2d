@@ -102,7 +102,28 @@ const EVENT_DESC = {
 };
 
 const AI_EMOTIONS = ['neutral', 'smile', 'happy', 'gentle', 'surprised', 'shock', 'troubled', 'shy', 'jito', 'pout', 'sad', 'curious', 'enjoy', 'sleepy'];
-const AI_ACTIONS = { none: '无', hop: '开心地跳一下', swish: '甩尾巴', twitch: '抖耳朵', blush: '脸红', hearts: '冒出爱心', sweat: '慌张流汗', anger: '生气（冒青筋）', notes: '哼歌（冒音符）', sleep: '打瞌睡' };
+const AI_ANIMATIONS = { stretch: '伸懒腰', lookAround: '左右看看', peek: '探头', tailPlay: '玩尾巴', earFlick: '动动耳朵', hum: '哼小曲' };
+const AI_ACTIONS = { none: '无', hop: '开心地跳一下', swish: '甩尾巴', twitch: '抖耳朵', blush: '脸红', hearts: '冒出爱心', sweat: '慌张流汗', anger: '生气（冒青筋）', notes: '哼歌（冒音符）', sleep: '打瞌睡', ...AI_ANIMATIONS };
+const AI_STAGE_ACTIONS = [
+  ['stretch', /^(?:伸(?:了个|个|了一个)?懒腰|stretches(?: her arms)?)$/iu],
+  ['lookAround', /^(?:左右看看|环顾四周|looks around)$/iu],
+  ['peek', /^(?:探(?:了下|了探)?头|peeks(?: out)?)$/iu],
+  ['swish', /^(?:甩(?:了甩)?尾巴|摇(?:了摇)?尾巴|(?:swishes|wags) her tail)$/iu],
+  ['earFlick', /^(?:动动耳朵|抖(?:了抖)?耳朵|(?:flicks|twitches) her ears)$/iu],
+  ['hum', /^(?:哼(?:了|着|起了)?(?:首歌|小曲|歌)|hums(?: a tune)?)$/iu],
+  ['hop', /^(?:跳了一下|hops(?: once)?)$/iu],
+  ['blush', /^(?:脸红了?|blushes)$/iu],
+];
+
+function replyAction(action, reply) {
+  if (typeof action === 'string' && action !== 'none' && Object.hasOwn(AI_ACTIONS, action)) return action;
+  for (const match of reply.matchAll(/（([^（）]{1,36})）|\(([^()]{1,36})\)/gu)) {
+    const direction = (match[1] ?? match[2]).trim().replace(/^(?:千绘莉|她|轻轻(?:地)?|(?:Chieri|she)\s+)/iu, '');
+    const known = AI_STAGE_ACTIONS.find(([, pattern]) => pattern.test(direction));
+    if (known) return known[0];
+  }
+  return 'none';
+}
 
 function localClock(now = new Date()) {
   const hour = now.getHours(), minute = now.getMinutes();
@@ -140,7 +161,7 @@ ${s.persona}
 {"reply":"角色说的话","emotion":"表情","action":"动作","affection":0${ja ? ',"ja":"日语台词"' : ''}}
 - reply：口语化、简短（互动反应 30 字以内，聊天 80 字以内），可以用（）穿插一小段神态描写。
 - emotion 取值之一：${emo}
-- action 取值之一：${act}
+- action 取值之一：${act}。仅选择角色在这句回复里实际做的一个动作，动作应和台词一致。没有动作时填 none，不因对方或第三人的动作而触发。
 - affection：这件事让你对对方的好感变化，-0.2 到 0.2 之间的小数。${ja ? `
 - ja：reply 里说出口的话的日语版（自然的口语，保持角色语气，自称「私」，用です・ます体），不含（）里的神态描写，不加注音。` : ''}
 当前状态：好感 ${Math.round(state.aff * 100)}/100，不满 ${Math.round(Math.min(1, state.ang) * 100)}/100${state.mood ? '，' + state.mood : ''}。` +
@@ -228,7 +249,7 @@ ${s.persona}
     if (!o || typeof o.reply !== 'string') o = { reply: String(text).replace(/```\w*|```/g, '').trim() };
     o.reply = o.reply.trim().slice(0, 200) || '……';
     if (!AI_EMOTIONS.includes(o.emotion)) o.emotion = null;
-    if (!(o.action in AI_ACTIONS)) o.action = 'none';
+    o.action = replyAction(o.action, o.reply);
     o.affection = Math.max(-0.2, Math.min(0.2, +o.affection || 0));
     o.ja = typeof o.ja === 'string' && o.ja.trim() ? o.ja.trim().slice(0, 300) : null;
     return o;

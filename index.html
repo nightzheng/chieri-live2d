@@ -237,13 +237,17 @@
         <fieldset class="desk-only" id="proactiveSettings">
           <legend>主动互动</legend>
           <label class="sw"><input type="checkbox" id="pEnabled"><i></i>开启主动闲聊</label>
-          <label class="f"><span>闲聊频率</span><select id="pFrequency" aria-describedby="pFrequencyHelp"><option value="occasional">偶尔（约 45–90 分钟）</option><option value="medium">适中（约 20–40 分钟）</option><option value="frequent">频繁（约 10–20 分钟）</option><option value="custom">自定义</option></select></label>
+          <label class="sw"><input type="checkbox" id="pPreset"><i></i>开启预设台词与动作</label>
+          <label class="f"><span>预设台词最小间隔（分钟）</span><input type="number" id="pPresetMin" min="10" max="1440" aria-describedby="pPresetHelp"></label>
+          <label class="f"><span>预设台词每日上限</span><input type="number" id="pPresetLimit" min="1" max="24"></label>
+          <p class="note" id="pPresetHelp">预设台词通常在设定间隔的 1–2 倍后触发，和 AI 闲聊分别计时。</p>
+          <label class="sw"><input type="checkbox" id="pAI"><i></i>用聊天模型生成主动台词</label>
+          <label class="f"><span>AI 闲聊频率</span><select id="pFrequency" aria-describedby="pFrequencyHelp"><option value="occasional">偶尔（约 45–90 分钟）</option><option value="medium">适中（约 20–40 分钟）</option><option value="frequent">频繁（约 10–20 分钟）</option><option value="custom">自定义</option></select></label>
           <label class="f"><span>最小间隔</span><input type="number" id="pMin" min="10" max="1440" aria-label="最小间隔（分钟）"></label>
           <p class="note" id="pFrequencyHelp"></p>
           <label class="f"><span>安静开始</span><input type="time" id="pQuietFrom"></label>
           <label class="f"><span>安静结束</span><input type="time" id="pQuietTo"></label>
-          <label class="f"><span>每日上限</span><input type="number" id="pLimit" min="1" max="24"></label>
-          <label class="sw"><input type="checkbox" id="pAI"><i></i>用聊天模型生成主动台词</label>
+          <label class="f"><span>AI 闲聊每日上限</span><input type="number" id="pLimit" min="1" max="60"></label>
           <label class="sw"><input type="checkbox" id="pVision"><i></i>主动闲聊时查看屏幕</label>
           <label class="f"><span>查看频率</span><select id="pVisionEvery"><option value="1">每次主动闲聊</option><option value="2">每 2 次主动闲聊</option><option value="3">每 3 次主动闲聊</option><option value="5">每 5 次主动闲聊</option><option value="10">每 10 次主动闲聊</option></select></label>
           <details id="pvSetup">

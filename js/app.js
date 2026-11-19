@@ -746,6 +746,10 @@ function applyAI(o, sem, dur, withAffection) {
   if (withAffection && o.affection) o.affection > 0 ? please(o.affection * 0.5) : annoy(-o.affection * 0.6);
 }
 function doAction(a) {
+  if (Object.hasOwn(AI_ANIMATIONS, a)) {
+    if (!S.anim && !S.drag && !S.carry && !S.switching && !S.sleep) startAnim(a);
+    return;
+  }
   const top = headTop();
   if (a === 'hop') hop();
   else if (a === 'swish') swish(1.3);

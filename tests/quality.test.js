@@ -119,7 +119,7 @@ test('AI candidate excerpts are user-only, validated, and rate limited including
 test('virtual state: response, repeated ignores, temporary focus, midnight quiet, TTS, reminder, restart', t => {
   const store = library(t), open = () => store.open();
   const p = new Proactive(open, () => 0);
-  p.configure({ ...p.options(), enabled: true, frequency: 'frequent', strength: 'strong', limit: 8 }, start);
+  p.configure({ ...p.options(), enabled: true, presetMin: 10, strength: 'strong', presetLimit: 8 }, start);
   const input = (offset, flags = {}) => ({ now: start + offset * minute, zone: 'Asia/Shanghai', idle: 10 * minute, ...flags });
   assert.equal(p.status(input(1, { busy: true })).state, '活跃交流');
   assert.equal(p.status(input(1, { reminder: true })).state, '关心提醒');
