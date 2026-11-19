@@ -207,6 +207,7 @@ class VisionFlow {
         (session.spoken + 1) % session.every !== 0 || !valid() || this.now() - this.lastRequest < 30000) return null;
     this.busy = true;
     this.error = '';
+    this.failure = false;
     this.notify(this.status());
     try {
       const jpeg = await this.capture(session.source, session.config, true);
@@ -220,7 +221,10 @@ class VisionFlow {
       }
       return text.slice(0, 400);
     } catch (_) {
-      if (this.observation === session) this.stop('主动观察因截图或请求失败已停止', true);
+      if (this.observation === session) {
+        this.error = '本次主动观察失败，已跳过截图描述';
+        this.failure = true;
+      }
       return null;
     } finally { this.busy = false; this.notify(this.status()); }
   }

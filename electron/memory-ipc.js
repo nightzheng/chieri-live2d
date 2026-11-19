@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { randomUUID } = require('node:crypto');
 const path = require('node:path');
 const { app, ipcMain, dialog, shell } = require('electron');
 const { MemoryStore, extraction, writeAtomic, RULE_GROUPS } = require('./memory-store');
@@ -97,6 +98,7 @@ module.exports = function registerMemory(ownsWindow, root, settings, manager, lo
     },
     legacy: (_, rows) => store.importLegacy(rows),
     append: (_, a) => a?.who === 'bot' && !store.hasConversation(a.conversation) ? null : store.append(a?.who, a?.text, a?.conversation),
+    appendProactive: (_, text) => store.append('bot', text, 'proactive:' + randomUUID()),
     history: (_, a) => store.history(a?.query, a?.before),
     conversations: (_, a) => store.conversations(a?.query, a?.offset),
     deleteConversation: (_, id) => { store.deleteConversation(id); memoryRevision++; },

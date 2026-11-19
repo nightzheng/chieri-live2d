@@ -134,24 +134,25 @@ const Voice = {
   },
   async prepareAnimation(text, opt, timeout = 5000) {
     if (opt.voice === false || !this.on(opt.kind)) return null;
+    this.pending++;
     let timer;
     try {
       return await Promise.race([
-        this.make(text, opt).catch(e => this.fail(e)),
+        this.make(text, opt, false).catch(e => this.fail(e)),
         new Promise(resolve => { timer = setTimeout(resolve, timeout); }),
       ]);
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); this.pending--; }
   },
   // text -> decoded AudioBuffer (null when there is nothing to say); throws on failure
-  async make(text, opt = {}) {
-    this.pending++;
+  async make(text, opt = {}, trackPending = true) {
+    if (trackPending) this.pending++;
     try {
       const eng = this.engine();
       const words = this.wantsJa() ? await this.toJa(text, opt.ja) : this.spoken(opt.translate === false ? text : I18n.fixed(text));
       if (!words || eng === 'off') return null;
       const bytes = await this.synth(eng, words, opt);
       return bytes ? await this.decode(bytes) : null;
-    } finally { this.pending--; }
+    } finally { if (trackPending) this.pending--; }
   },
 
   async toJa(text, ja) {

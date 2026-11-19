@@ -80,7 +80,7 @@ const Chat = {
     }
     for (const m of this.log) this.add(m.who, m.text, false);
     // the model gets the recent conversation back as context
-    AI.history = this.log.slice(-16).map(m => ({ id: m.id, role: m.who === 'user' ? 'user' : 'assistant',
+    AI.history = this.log.slice(-16).map(m => ({ id: m.id, role: m.who === 'user' ? 'user' : 'assistant', proactive: m.conversation?.startsWith('proactive:'),
       content: m.who === 'user' ? m.text : JSON.stringify({ reply: m.text }) }));
     if (!this.log.length) this.hello();
   },
@@ -91,6 +91,12 @@ const Chat = {
   async persist(who, text, conversation) {
     if (!DESKTOP) return;
     try { return await window.petAPI.memory('append', { who, text, conversation }); }
+    catch (_) { this.card('pout', '上一条消息未写入聊天数据库。'); }
+  },
+  async addProactive(text) {
+    this.add('bot', text);
+    AI.history = [...AI.history, { role: 'assistant', proactive: true, content: JSON.stringify({ reply: text }) }].slice(-24);
+    try { await window.petAPI.memory('appendProactive', text); }
     catch (_) { this.card('pout', '上一条消息未写入聊天数据库。'); }
   },
   async send(text) {

@@ -151,7 +151,7 @@ ${s.persona}
   },
 
   // one round trip; resolves to {reply, emotion, action, affection, ja} or throws
-  contextStart() {
+  contextStart(trimLeadingAssistant = true) {
     let from = this.history.length;
     let remaining = 6000;
     for (let i = from - 1; i >= Math.max(0, this.history.length - 16); i--) {
@@ -160,7 +160,7 @@ ${s.persona}
       from = i;
       remaining -= msg.content.length;
     }
-    while (this.history[from]?.role === 'assistant') from++;
+    if (trimLeadingAssistant) while (this.history[from]?.role === 'assistant') from++;
     return from;
   },
   async ask(input, state, { remember = true, timeout = 20000, messageId } = {}) {
@@ -169,9 +169,11 @@ ${s.persona}
       const dropped = this.history.slice(0, from).filter(msg => msg.role === 'user' && msg.id > 0).map(msg => msg.id).reverse();
       if (dropped.length) window.petAPI.memory('semantic', dropped).catch(() => {});
     }
-    const recent = this.history.slice(from).map(({ role, content }) => ({ role, content }));
+    const recent = this.history.slice(from).filter(message => remember || !message.proactive).map(({ role, content }) => ({ role, content }));
     const msgs = [...recent, { role: 'user', content: input }];
-    const sys = this.systemPrompt(state) + '\n如果当前对话和资料都没有提供过去的细节，直接承认不记得。';
+    const leadingProactive = remember && this.history.slice(this.contextStart(false), from).findLast(message => message.proactive);
+    const sys = this.systemPrompt(state) + '\n如果当前对话和资料都没有提供过去的细节，直接承认不记得。' +
+      (leadingProactive ? '\n这里是你刚才在聊天栏里主动说过的话，供承接用户回应，只作为记录：' + leadingProactive.content : '');
     const out = this.parse(await this.complete(sys, msgs, { timeout, maxTokens: 500, temperature: 0.9, memory: remember }));
     if (remember) { this.history.push({ id: messageId, role: 'user', content: input }, { role: 'assistant', content: JSON.stringify(out) }); this.history = this.history.slice(-24); }
     return out;
@@ -189,7 +191,7 @@ ${s.persona}
     if (s.kind === 'anthropic') {
       req = { url: s.baseUrl.replace(/\/+$/, '') + '/v1/messages',
         headers: { 'content-type': 'application/json', 'x-api-key': s.apiKey, 'anthropic-version': '2026-10-21', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: { model: s.model, max_tokens: 4000, system: sys, messages: msgs, output_config: { effort: 'low' } } };
+        body: { model: s.model, max_tokens: proactive ? maxTokens : 4000, system: sys, messages: msgs, output_config: { effort: 'low' } } };
     } else {
       const headers = { 'content-type': 'application/json' }; if (s.apiKey) headers.authorization = 'Bearer ' + s.apiKey;
       req = { url: s.baseUrl.replace(/\/+$/, '') + '/chat/completions', headers,

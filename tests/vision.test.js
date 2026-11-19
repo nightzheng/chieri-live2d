@@ -91,6 +91,28 @@ test('a private title skips the request and a private description skips forwardi
   assert.match(service.status().error, /已跳过转发/);
 });
 
+test('a temporary vision failure keeps the authorized cadence for the next sample', async () => {
+  let now = 0, attempts = 0;
+  const service = new VisionFlow({ now: () => now, capture: async () => picture,
+    request: async () => {
+      if (++attempts === 1) throw new Error('service unavailable');
+      return 'public topic';
+    } });
+  const preview = await service.stage('w', source, '', config);
+  service.beginProactive('w', preview.token, config, { every: 2, chat: 'chat' });
+  service.markSpoken('w');
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  assert.equal(service.status().observation.mode, 'proactive');
+  assert.equal(service.status().failure, true);
+  service.markSpoken('w');
+  now += minute;
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
+  service.markSpoken('w');
+  now += minute;
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), 'public topic');
+  assert.equal(service.status().failure, false);
+});
+
 test('stopping during capture or network quarantines late results', async () => {
   let captureFinish;
   const pending = new VisionFlow({ capture: () => new Promise(resolve => { captureFinish = resolve; }) });

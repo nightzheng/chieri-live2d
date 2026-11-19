@@ -237,6 +237,7 @@ const CompanionUI = {
       if (S.anim?.ambient) S.anim = null;
       say(reply, emotion, null, { ...opt, buffer, voice: !!buffer });
       doAction(action);
+      await Chat.addProactive(I18n.fixed(reply));
     } catch (_) {} finally { this.talking = false; }
   },
   init() {

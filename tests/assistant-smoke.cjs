@@ -196,6 +196,17 @@ async function run() {
   assert.equal(shots, shotsBefore + 1);
   assert.equal(sent, sentBefore + 1);
   assert.equal((await call('state')).latest, '');
+  assert.equal(await runJS("document.querySelector('#msgs').textContent.includes('生成的测试问候')"), true);
+  const proactiveHistory = (await ipc('memory', 'history')).filter(row => row.conversation.startsWith('proactive:'));
+  assert.ok(proactiveHistory.some(row => row.text === '生成的测试问候'));
+  assert.ok(proactiveHistory.every(row => !row.text.includes('合成画面的视觉描述')));
+  chatBody = undefined;
+  await runJS(`(async () => {
+    AI.history = [{role:'assistant', proactive:true, content:JSON.stringify({reply:'生成的测试问候'})}];
+    await Chat.send('你刚才说的是什么？');
+  })()`);
+  assert.match(JSON.stringify(chatBody), /生成的测试问候/);
+  assert.doesNotMatch(JSON.stringify(chatBody), /合成画面的视觉描述/);
   powerMonitor.emit('lock-screen');
   assert.equal((await call('state')).observation, null);
   assert.equal((await call('state')).savedSource.name, proactiveSource.name);

@@ -146,6 +146,19 @@ async function run() {
     return {early, due, inRange, repeated, disabled, waited, pairedAudio};
   })()`);
   assert.deepEqual(ambient, { early: true, due: true, inRange: true, repeated: false, disabled: true, waited: true, pairedAudio: true });
+  assert.equal(await js(`(async () => {
+    const make = Voice.make, on = Voice.on;
+    try {
+      Voice.on = () => true;
+      Voice.make = (_, __, trackPending) => {
+        if (trackPending !== false) Voice.pending++;
+        return new Promise(() => {});
+      };
+      const before = Voice.pending;
+      const buffer = await Voice.prepareAnimation('slow test', {kind:'proactive'}, 1);
+      return !buffer && Voice.pending === before;
+    } finally { Voice.make = make; Voice.on = on; }
+  })()`), true);
   const ambientRounds = await js(`(async () => {
     Store.data.ambientMinutes = ambientFrequency = 5;
     remainingIdleMoments = new Set(IDLE_MOMENTS);
