@@ -4,9 +4,23 @@ const { randomUUID } = require('node:crypto');
 
 const MINUTE = 60000;
 const MAX_IMAGE = 1024 * 1024;
-const INTERVALS = [5, 10, 15, 30];
 const PRIVATE_WORDS = '微信\nWeChat\n企业微信\nQQ\n钉钉\n飞书\nTelegram\nWhatsApp\nDiscord\n邮件\nOutlook\n密码\n验证码\n口令\n身份证\n银行卡\n支付\n私钥\nAPI Key\nPassword\nBitwarden\n1Password\nKeePass';
-const DEFAULTS = { enabled: false, provider: 'openai', base: 'https://api.openai.com/v1', model: '', size: 1024, quality: 70, timeout: 20000, privateWords: PRIVATE_WORDS };
+const DEFAULTS = { enabled: false, provider: 'openai', base: 'https://api.openai.com/v1', model: '', size: 1024, quality: 70, timeout: 20000, hdrCorrection: false, privateWords: PRIVATE_WORDS };
+
+const HDR_CURVE = Uint8Array.from({ length: 256 }, (_, value) => Math.round(255 * (value / 255) ** 1.35));
+function correctHdrBitmap(bitmap) {
+  const output = Buffer.from(bitmap);
+  for (let i = 0; i + 3 < output.length; i += 4) {
+    const b = output[i], g = output[i + 1], r = output[i + 2];
+    const light = Math.round((b * 19 + g * 183 + r * 54) / 256);
+    if (light === 0) continue;
+    const scale = HDR_CURVE[light] / light;
+    output[i] = Math.round(b * scale);
+    output[i + 1] = Math.round(g * scale);
+    output[i + 2] = Math.round(r * scale);
+  }
+  return output;
+}
 
 function isPrivate(text, words) {
   const normalize = value => value.normalize('NFKC').toLowerCase();
@@ -18,7 +32,8 @@ function validateConfig(value) {
   if (!value || typeof value.enabled !== 'boolean' || !['openai', 'compatible'].includes(value.provider) ||
       typeof value.base !== 'string' || value.base.length > 250 || typeof value.model !== 'string' || value.model.length > 150 ||
       ![768, 1024, 1280].includes(value.size) || ![55, 70, 85].includes(value.quality) ||
-      ![10000, 20000, 30000].includes(value.timeout)) throw new Error('视觉 API 设置格式无效');
+      ![10000, 20000, 30000].includes(value.timeout) ||
+      (value.hdrCorrection !== undefined && typeof value.hdrCorrection !== 'boolean')) throw new Error('视觉 API 设置格式无效');
   let url;
   try { url = new URL(value.base); } catch (_) { throw new Error('视觉 API 地址无效'); }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
@@ -30,7 +45,7 @@ function validateConfig(value) {
   const privateWords = value.privateWords ?? PRIVATE_WORDS;
   if (typeof privateWords !== 'string' || privateWords.length > 2000 || privateWords.includes('\0')) throw new Error('隐私关键词最多 2000 字');
   return { enabled: value.enabled, provider: value.provider, base: url.href.replace(/\/+$/, ''),
-    model: value.model.trim(), size: value.size, quality: value.quality, timeout: value.timeout, privateWords };
+    model: value.model.trim(), size: value.size, quality: value.quality, timeout: value.timeout, hdrCorrection: value.hdrCorrection ?? false, privateWords };
 }
 
 function parseRequest(question) {
@@ -119,8 +134,14 @@ class VisionFlow {
     this.stop();
   }
 
+  discardPreview(clearResult = false) {
+    this.preview = null;
+    if (clearResult) this.latest = '';
+    this.notify(this.status());
+  }
+
   async stage(owner, source, question, config) {
-    if (this.busy || this.observation) throw new Error('请先停止当前视觉操作');
+    if (this.busy) throw new Error('正在处理另一次视觉请求');
     this.preview = null;
     this.error = '';
     const epoch = this.generation;
@@ -153,44 +174,22 @@ class VisionFlow {
     return result;
   }
 
-  async send(owner, token, config, observe) {
+  async send(owner, token, config) {
     this.inspect(owner, token);
     if (this.busy) throw new Error('正在处理另一次视觉请求');
-    const { source, image, question } = this.preview;
-    if (observe && (!INTERVALS.includes(observe.interval) || !INTERVALS.includes(observe.duration) ||
-        observe.interval >= observe.duration)) throw new Error('截图周期须短于观察时长');
+    const { image, question } = this.preview;
     this.preview = null;
     this.error = '';
-    const now = this.now();
-    const session = observe && { owner, source, question, config, interval: observe.interval * MINUTE,
-      expires: now + observe.duration * MINUTE, next: now + observe.interval * MINUTE };
-    this.observation = session || null;
-    return this.analyze(config, image, question, session?.expires);
-  }
-
-  async analyze(config, image, question, deadline) {
     this.busy = true;
-    const epoch = this.generation;
     this.notify(this.status());
     try {
-      const result = await this.run(config, image, question, deadline);
+      const result = await this.run(config, image, question);
       this.latest = result;
       return result;
-    } catch (e) {
-      if (this.generation === epoch && this.observation) this.stop('观察因请求失败已停止', true);
-      throw e;
     } finally { this.busy = false; this.notify(this.status()); }
   }
 
-  beginProactive(owner, token, config, { every, chat }) {
-    this.inspect(owner, token);
-    if (this.busy || this.observation) throw new Error('请先停止当前视觉操作');
-    const { source } = this.preview;
-    this.activateProactive(owner, source, config, { every, chat });
-  }
-
   activateProactive(owner, source, config, { every, chat }) {
-    this.preview = null;
     this.error = '';
     this.failure = false;
     this.observation = { owner, source, config, chat, every, spoken: 0, mode: 'proactive', expires: Infinity };
@@ -239,7 +238,7 @@ class VisionFlow {
   }
 
   async test(config, image) {
-    if (this.observation || this.busy) throw new Error('请先完成当前视觉操作');
+    if (this.busy) throw new Error('请先完成当前视觉操作');
     this.busy = true;
     this.error = '';
     try { return await this.run(config, image, '请描述此测试色块。'); }
@@ -249,22 +248,8 @@ class VisionFlow {
   async tick(allowed) {
     const now = this.now();
     if (this.preview?.expires <= now) { this.preview = null; this.notify(this.status()); }
-    const session = this.observation;
-    if (!session) return;
-    if (!allowed || now >= session.expires) return this.stop(allowed ? '观察已到期' : '观察已暂停，请重新授权');
-    if (session.mode === 'proactive') return;
-    if (this.busy || now < session.next) return;
-    session.next = now + session.interval;
-    this.busy = true;
-    this.notify(this.status());
-    try {
-      const image = await this.capture(session.source, session.config);
-      if (this.observation !== session || this.now() >= session.expires) return;
-      this.latest = await this.run(session.config, image, session.question, session.expires);
-    } catch (_) {
-      if (this.observation === session) this.stop('观察因截图或请求失败已停止', true);
-    } finally { this.busy = false; this.notify(this.status()); }
+    if (this.observation && !allowed) this.stop('主动观察已暂停');
   }
 }
 
-module.exports = { DEFAULTS, INTERVALS, MAX_IMAGE, VisionFlow, validateConfig, visionRequest, parseRequest, isPrivate };
+module.exports = { DEFAULTS, MAX_IMAGE, VisionFlow, validateConfig, visionRequest, parseRequest, isPrivate, correctHdrBitmap };

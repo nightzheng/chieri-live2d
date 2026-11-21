@@ -116,7 +116,13 @@ class Proactive {
 
   spoken(now, stream = 'preset') {
     this.session[stream].latest = this.session[stream].waiting = now;
-    const state = this.read('state', {});
+    const options = this.options(), state = this.state(options);
+    if (stream === 'preset') {
+      const clock = state.streams.preset ??= {};
+      clock.interval = delay(streamTiming(options, stream), this.random);
+      clock.next = now + clock.interval;
+      clock.sent = [...(clock.sent || []).filter(at => now - at < 48 * 60 * MINUTE), now];
+    }
     this.write('state', { ...state, lastSpoken: now });
   }
 
@@ -190,6 +196,10 @@ class Proactive {
       const ignored = this.session[stream].ignored;
       const backoff = options.adaptive && ignored >= 2 ? (clock.interval || delay(timing, () => 0)) * Math.min(3, (ignored - 1) * strength) : 0;
       if (clock.next + backoff > now || recent.filter(at => calendar(at, zone).day === day).length >= timing.limit) continue;
+      if (stream === 'preset') {
+        if (changed) this.write('state', state);
+        return { ai: false, voice: options.voice };
+      }
       clock.interval = delay(timing, this.random);
       clock.next = now + clock.interval;
       clock.sent = [...recent, now];

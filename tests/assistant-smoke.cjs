@@ -27,6 +27,7 @@ Object.defineProperty(performance, 'now', { value: () => realNow() + clockOffset
 let approved = false, shots = 0, sent = 0, failed = false, privateWindow = false, ownWindow, proactiveBody, chatBody;
 let ignoreScreen = false;
 const red = Buffer.alloc(96 * 64 * 4, 255);
+for (let i = 0; i < red.length; i += 4) red[i] = red[i + 1] = red[i + 2] = 180;
 const responses = [], semanticRequests = [];
 const server = http.createServer((req, res) => {
   let body = '';
@@ -118,7 +119,7 @@ async function run() {
 
   const existing = await runJS('petAPI.getSettings()');
   await call('save', { enabled: true, provider: 'compatible', base: base + '/vision',
-    model: 'synthetic-vision', key: 'synthetic-vision-key', clearKey: false, size: 768, quality: 70, timeout: 10000 });
+    model: 'synthetic-vision', key: 'synthetic-vision-key', clearKey: false, size: 768, quality: 70, timeout: 10000, hdrCorrection: true });
   assert.deepEqual(await runJS('petAPI.getSettings()'), existing);
   const disk = fs.readFileSync(path.join(profile, 'vision-settings.json'), 'utf8');
   assert.ok(JSON.parse(disk).encryptedKey);
@@ -129,19 +130,19 @@ async function run() {
   approved = false;
   let preview = await call('preview', { id: source.id, question: 'describe' });
   assert.match(preview.data, /^data:image\/jpeg;base64,/);
+  assert.ok(nativeImage.createFromDataURL(preview.data).toBitmap()[0] < 175, 'HDR correction is applied before encoding the preview');
   assert.equal(shots, 1);
   assert.equal(sent, 0);
   assert.equal(await call('send', preview.token), null);
   assert.equal(sent, 0);
   preview = await call('preview', { id: source.id, question: 'describe' });
   approved = true;
-  assert.equal(await call('observe', { token: preview.token, interval: 5, duration: 10 }), '合成画面的视觉描述');
+  assert.equal(await call('send', preview.token), '合成画面的视觉描述');
   assert.equal(sent, 1);
   assert.equal(responses[0], preview.data);
-  await until(() => runJS("!document.querySelector('#visionIndicator').classList.contains('hidden')"));
+  assert.equal(await runJS("document.querySelector('#visionIndicator, #visObserve') === null"), true);
   powerMonitor.emit('lock-screen');
   assert.equal((await call('state')).observation, null);
-  await until(() => runJS("document.querySelector('#visionIndicator').classList.contains('hidden')"));
   powerMonitor.emit('unlock-screen');
   await call('clear');
   assert.equal((await call('state')).latest, '');
@@ -187,17 +188,17 @@ async function run() {
     ai: true, memory: true, voice: false, adaptive: false, vision: true, visionEvery: 2 });
   failed = false;
   const [proactiveSource] = await call('sources', 'screen');
-  preview = await call('preview', { id: proactiveSource.id, question: 'describe' });
   const sentBefore = sent;
+  const shotsBefore = shots;
   approved = false;
-  assert.equal(await call('observeProactive', { token: preview.token, duration: 30 }), null);
+  assert.equal(await call('authorizeProactive', proactiveSource.id), null);
   assert.equal((await call('state')).observation, null);
   approved = true;
-  assert.equal(await call('observeProactive', { token: preview.token, duration: 30 }), true);
+  assert.equal(await call('authorizeProactive', proactiveSource.id), true);
   assert.equal(JSON.parse(fs.readFileSync(path.join(profile, 'proactive-screen.json'), 'utf8')).source.name, proactiveSource.name);
-  assert.equal(sent, sentBefore, 'authorization does not send the preview');
+  assert.equal(sent, sentBefore, 'authorization sends no screenshot');
+  assert.equal(shots, shotsBefore, 'authorization works without taking a preview');
   assert.equal((await call('state')).observation.mode, 'proactive');
-  const shotsBefore = shots;
   for (const expected of [false, true]) {
     proactiveBody = undefined;
     now += 21 * 60000; // Advance the dialogue scheduler, leaving the explicit observation lease active.

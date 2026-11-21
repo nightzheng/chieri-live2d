@@ -240,7 +240,7 @@
           <label class="sw"><input type="checkbox" id="pPreset"><i></i>开启预设台词与动作</label>
           <label class="f"><span>预设台词最小间隔（分钟）</span><input type="number" id="pPresetMin" min="10" max="1440" aria-describedby="pPresetHelp"></label>
           <label class="f"><span>预设台词每日上限</span><input type="number" id="pPresetLimit" min="1" max="24"></label>
-          <p class="note" id="pPresetHelp">预设台词通常在设定间隔的 1–2 倍后触发，和 AI 闲聊分别计时。</p>
+          <p class="note" id="pPresetHelp">预设台词从实际发言开始计时，基础间隔为设定值的 1–2 倍。下方的日常动作与语气词另计。</p>
           <label class="sw"><input type="checkbox" id="pAI"><i></i>用聊天模型生成主动台词</label>
           <label class="f"><span>AI 闲聊频率</span><select id="pFrequency" aria-describedby="pFrequencyHelp"><option value="occasional">偶尔（约 45–90 分钟）</option><option value="medium">适中（约 20–40 分钟）</option><option value="frequent">频繁（约 10–20 分钟）</option><option value="custom">自定义</option></select></label>
           <label class="f"><span>最小间隔</span><input type="number" id="pMin" min="10" max="1440" aria-label="最小间隔（分钟）"></label>
@@ -252,15 +252,15 @@
           <label class="f"><span>查看频率</span><select id="pVisionEvery"><option value="1">每次主动闲聊</option><option value="2">每 2 次主动闲聊</option><option value="3">每 3 次主动闲聊</option><option value="5">每 5 次主动闲聊</option><option value="10">每 10 次主动闲聊</option></select></label>
           <details id="pvSetup">
             <summary>屏幕来源与隐私</summary>
-            <p class="note">选定来源并确认一次即可记住授权。锁屏时暂停，可随时撤销；更换来源或服务需要重新授权。</p>
+            <p class="note">选定来源后直接点「记住授权」。预览仅在本机显示，可单独使用。锁屏时暂停，可随时撤销授权。</p>
             <label class="f"><span>共享范围</span><select id="pvKind"><option value="screen">显示器</option><option value="window">窗口</option></select></label>
             <label class="f"><span>共享来源</span><select id="pvSource"></select></label>
             <label class="f"><span>隐私关键词</span><textarea id="pvPrivateWords" rows="4" maxlength="2000" placeholder="每行一个词"></textarea></label>
             <p class="note">匹配窗口标题会跳过截图。匹配视觉描述会跳过转发。图片里出现但标题没有的文字可能已发送给视觉服务。</p>
             <div class="row2 wrap">
               <button type="button" class="mini" id="pvSources">刷新来源</button>
-              <button type="button" class="mini" id="pvPreview">预览截图</button>
               <button type="button" class="mini" id="pvStart" disabled>记住授权</button>
+              <button type="button" class="mini" id="pvPreview">预览截图</button>
               <button type="button" class="mini" id="pvStop">撤销授权</button>
             </div>
             <p class="note action-status" id="pvStatus" role="status"></p>
@@ -288,13 +288,15 @@
           <label class="f"><span>尺寸</span><select id="visSize"><option>768</option><option>1024</option><option>1280</option></select></label>
           <label class="f"><span>JPEG 质量</span><select id="visQuality"><option>55</option><option>70</option><option>85</option></select></label>
           <label class="f"><span>超时</span><select id="visTimeout"><option value="10000">10 秒</option><option value="20000">20 秒</option><option value="30000">30 秒</option></select></label>
+          <label class="sw"><input type="checkbox" id="visHdrCorrection"><i></i>HDR 截图亮度校正</label>
+          <p class="note">Windows HDR 开启后，如果截图偏亮或泛白，可以开启校正，再用预览对比效果。</p>
           <div class="row2 wrap">
             <button type="button" class="mini" id="visConnection">测试连接</button>
             <button type="button" class="mini" id="visTestImage">分析合成测试图</button>
           </div>
           <p class="note action-status" id="visTestFeedback" role="status"></p>
           <p class="note" id="visConfigStatus"></p>
-          <p class="note">所选画面可能包含密码或私人信息。单次发送和开始观察都需要确认。截图仅在内存中处理，描述默认不写入聊天或长期记忆。</p>
+          <p class="note">所选画面可能包含密码或私人信息。单次发送前需要确认。截图仅在内存中处理，描述默认不写入聊天或长期记忆。</p>
           <label class="f"><span>范围</span><select id="visKind"><option value="screen">显示器</option><option value="window">窗口</option></select></label>
           <label class="f"><span>共享来源</span><select id="visSource" aria-label="共享来源"></select></label>
           <label class="f"><span>想问什么</span><textarea id="visQuestion" rows="2" maxlength="400"></textarea></label>
@@ -302,18 +304,10 @@
             <button type="button" class="mini" id="visSources">列出共享来源</button>
             <button type="button" class="mini" id="visPreview">预览截图</button>
             <button type="button" class="mini" id="visSend" disabled>发送这张截图</button>
-            <button type="button" class="mini" id="visStop">停止 / 丢弃截图</button>
+            <button type="button" class="mini" id="visStop">丢弃截图</button>
           </div>
           <p class="note action-status" id="visStatus" role="status"></p>
           <img id="visImage" class="vision-preview hidden" alt="将发送的截图预览">
-          <details>
-            <summary>限时定时查看</summary>
-            <p class="note">开始前先预览和确认。隐藏窗口、锁屏、休眠或到期时结束。</p>
-            <label class="f"><span>时长</span><select id="visDuration"><option>10</option><option>15</option><option selected>30</option></select></label>
-            <label class="f"><span>每隔几分钟</span><select id="visInterval"><option>5</option><option>10</option><option>15</option></select></label>
-            <button type="button" class="mini" id="visObserve" disabled>开始观察</button>
-            <p class="note action-status" id="visTimedFeedback" role="status"></p>
-          </details>
           <p id="visResult"></p>
           <div class="row2 wrap">
             <button type="button" class="mini" id="visCharacter">用角色语气回应</button>
@@ -385,9 +379,6 @@
     <p class="desk-only">别的窗口在前台时，按 Ctrl+Alt+同一个键。</p>
   </aside>
 
-  <div id="visionIndicator" class="glass hidden" aria-label="屏幕观察进行中">
-    <span>正在观察屏幕</span><button type="button" class="mini" id="visGlobalStop">停止</button>
-  </div>
   <div id="toast"><img alt=""><span></span></div>
   <div id="loading"><img class="chibi" src="img/loading.png" alt=""><div id="loadText">正在烘焙表情差分</div></div>
 </div>

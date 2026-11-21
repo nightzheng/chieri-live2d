@@ -197,7 +197,7 @@ CPU（很慢）|CPU (slow)
 开启预设台词与动作|Enable preset lines and actions
 预设台词最小间隔（分钟）|Minimum preset interval (minutes)
 预设台词每日上限|Daily preset limit
-预设台词通常在设定间隔的 1–2 倍后触发，和 AI 闲聊分别计时。|Preset lines use a random interval of 1–2 times the minimum and run on a separate timer from AI chat.
+预设台词从实际发言开始计时，基础间隔为设定值的 1–2 倍。下方的日常动作与语气词另计。|The preset timer starts when a line is delivered. Its base interval is 1–2 times the minimum. Idle acts and phrases have their own timer.
 AI 闲聊频率|AI chat frequency
 AI 闲聊每日上限|Daily AI chat limit
 闲聊频率|Chat interval
@@ -219,7 +219,12 @@ AI 闲聊每日上限|Daily AI chat limit
 每 5 次主动闲聊|Every 5 proactive chats
 每 10 次主动闲聊|Every 10 proactive chats
 屏幕来源与隐私|Screen source & privacy
-选定来源并确认一次即可记住授权。锁屏时暂停，可随时撤销；更换来源或服务需要重新授权。|Choose a source and confirm once. Capture pauses on lock. Revoke any time or approve again after changing the source or service.
+选定来源后直接点「记住授权」。预览仅在本机显示，可单独使用。锁屏时暂停，可随时撤销授权。|Choose a source and select Remember permission. Local preview is optional. Capture pauses on lock, and permission can be revoked anytime.
+尚未授权主动观察|Proactive screen viewing has no saved permission
+已生成本地预览。可单独点「记住授权」。|Local preview ready. Remember permission is a separate action.
+请选择当前要共享的来源。|Choose the source you want to share.
+HDR 截图亮度校正|HDR screenshot brightness correction
+Windows HDR 开启后，如果截图偏亮或泛白，可以开启校正，再用预览对比效果。|If Windows HDR makes screenshots appear too bright or washed out, turn this on and compare the preview.
 共享范围|Share type
 显示器|Display
 窗口|Window
@@ -261,18 +266,14 @@ JPEG 质量|JPEG quality
 20 秒|20 seconds
 30 秒|30 seconds
 分析合成测试图|Analyze test image
-所选画面可能包含密码或私人信息。单次发送和开始观察都需要确认。截图仅在内存中处理，描述默认不写入聊天或长期记忆。|The selected area may contain private information. Confirm before sending or observing. Screenshots are processed in memory.
+所选画面可能包含密码或私人信息。单次发送前需要确认。截图仅在内存中处理，描述默认不写入聊天或长期记忆。|The selected area may contain private information. Confirm before sending. Screenshots are processed in memory. Descriptions stay out of chat and long-term memory by default.
 范围|Capture type
 想问什么|Question
 列出共享来源|List sources
 发送这张截图|Send this screenshot
-停止 / 丢弃截图|Stop / discard
+丢弃截图|Discard screenshot
+已丢弃截图|Screenshot discarded
 将发送的截图预览|Preview of the outgoing screenshot
-限时定时查看|Timed observation
-开始前先预览和确认。隐藏窗口、锁屏、休眠或到期时结束。|Preview and confirm first. Observation stops on hide, lock, sleep or expiry.
-时长|Duration
-每隔几分钟|Interval (min)
-开始观察|Start observing
 用角色语气回应|Respond as Chieri
 朗读描述|Read description
 保存到长期记忆|Save to memory
@@ -318,7 +319,6 @@ F8 退出|F8 to exit
 她不会自己乱动，台词固定为分镜里那句。|Idle action is paused and scripted lines are fixed.
 别的窗口在前台时，按 Ctrl+Alt+同一个键。|Use Ctrl+Alt with the shortcut from another window.
 屏幕观察进行中|Screen observation active
-正在观察屏幕|Observing screen
 停止|Stop
 正在烘焙表情差分|Preparing expressions
 记忆与聊天记录|Memories & chat history
@@ -469,7 +469,7 @@ Ollama 本地|Local Ollama
 上次主动台词已引用本轮画面细节|The last proactive line used a verified screen detail
 模型收到画面描述，但回复没有可核对的细节，已改用预设台词|The model received a screen description but did not use a verifiable detail. A preset line was used.
 本轮没有可用的屏幕描述。请查看上方的观察状态或共享授权|No screen description was available for this turn. Check the status or sharing permission above.
-本轮没有匹配的共享授权，请检查视觉设置并重新预览授权|No matching screen permission was found. Check the vision settings, then preview and approve sharing again.
+本轮没有匹配的共享授权，请选择来源后点「记住授权」|No matching screen permission was found. Select a source and choose Remember permission.
 本轮聊天地址与已保存的授权地址不一致，未发送画面描述|The chat endpoint didn't match the saved authorization. No screen description was sent.
 本轮主动聊天请求失败，已改用预设台词|The proactive chat request failed. A preset line was used.
 本次未识别到可用于闲聊的画面内容|No suitable screen details were found for this chat

@@ -4,7 +4,7 @@ const { app, ipcMain, BrowserWindow, desktopCapturer, powerMonitor, dialog, nati
 const fs = require('node:fs');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-const { DEFAULTS, INTERVALS, MAX_IMAGE, VisionFlow, validateConfig, parseRequest, isPrivate } = require('./vision');
+const { DEFAULTS, MAX_IMAGE, VisionFlow, validateConfig, parseRequest, isPrivate, correctHdrBitmap } = require('./vision');
 const { writeAtomic } = require('./memory-store');
 const { windowIdentity } = require('./vision-window');
 
@@ -85,11 +85,13 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
         const current = (await titles()).find(entry => entry.id === source.id);
         if (!current || current.name !== selected.name) throw new Error('共享窗口已变化，已跳过本次截图');
       } else if (selected.name !== source.name) {
-        throw new Error('共享来源已更名，请重新预览并授权');
+        throw new Error('共享来源已更名，请重新选择并授权');
       }
       if (!allowed()) return null;
-      let jpeg = selected.thumbnail.toJPEG(options.quality);
-      if (jpeg.length > MAX_IMAGE) jpeg = selected.thumbnail.resize({ width: 768 }).toJPEG(55);
+      let image = selected.thumbnail;
+      if (options.hdrCorrection) image = nativeImage.createFromBitmap(correctHdrBitmap(image.toBitmap()), image.getSize());
+      let jpeg = image.toJPEG(options.quality);
+      if (jpeg.length > MAX_IMAGE) jpeg = image.resize({ width: 768 }).toJPEG(55);
       if (!jpeg.length || jpeg.length > MAX_IMAGE) throw new Error('截图超过 1 MB，请降低尺寸');
       return jpeg;
     } finally {
@@ -139,22 +141,24 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
     } finally { confirming = false; }
   }
 
-  async function send(win, token, observe) {
+  async function send(win, token) {
     check(win);
     const { source } = flow.inspect(win, token);
-    if (observe && (!INTERVALS.includes(observe.duration) || !INTERVALS.includes(observe.interval) || observe.interval >= observe.duration)) {
-      throw new Error('截图周期须短于观察时长');
-    }
     const selectedConfig = config;
-    const action = observe ? language(`观察 ${observe.duration} 分钟，每 ${observe.interval} 分钟截图一次？`,
-      `Observe for ${observe.duration} minutes and capture every ${observe.interval} minutes?`) : language('发送这张预览截图？', 'Send the previewed screenshot?');
-    const approved = await confirm(win, action, language(
-      `范围：${source.name}\n服务：${config.base}\n模型：${config.model}\n请确认画面中没有密码和私人资料。观察期间可随时停止。`,
-      `Source: ${source.name}\nService: ${config.base}\nModel: ${config.model}\nCheck that the image contains no passwords or personal data. You can stop at any time.`));
-    if (!approved) { flow.stop(); return null; }
+    const approved = await confirm(win, language('发送这张预览截图？', 'Send the previewed screenshot?'), language(
+      `范围：${source.name}\n服务：${config.base}\n模型：${config.model}\n请确认画面中没有密码和私人资料。`,
+      `Source: ${source.name}\nService: ${config.base}\nModel: ${config.model}\nCheck that the image contains no passwords or personal data.`));
+    if (!approved) { flow.discardPreview(); return null; }
     check(win);
     if (config !== selectedConfig) throw new Error('视觉配置已变更，请重新截图');
-    return flow.send(win, token, config, observe);
+    return flow.send(win, token, config);
+  }
+
+  function selectedSource(win, id) {
+    const selection = typeof id === 'string' && inventory?.win === win && inventory[id.split(':')[0]];
+    const source = selection && Date.now() - selection.at < 120000 && selection.sources.find(item => item.id === id);
+    if (!source) throw new Error('请刷新范围并重新选择');
+    return source;
   }
 
   const operations = {
@@ -203,42 +207,34 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
     },
     async preview(win, value) {
       check(win);
-      if (flow.observation?.mode === 'proactive') flow.stop();
-      const selection = inventory?.win === win && inventory[value?.id?.split(':')[0]];
-      const source = selection && Date.now() - selection.at < 120000 && selection.sources.find(item => item.id === value?.id);
-      if (!source) throw new Error('请刷新范围并重新选择');
-      const selected = config, epoch = flow.generation;
-      const identity = source.id.startsWith('window:') ? await windowIdentity(source.id) : '';
-      check(win);
-      if (selected !== config || epoch !== flow.generation) throw new Error('截图已取消');
-      return flow.stage(win, identity ? { ...source, identity } : source, parseRequest(value.question), config);
+      return flow.stage(win, selectedSource(win, value?.id), parseRequest(value.question), config);
     },
-    send: (win, token) => send(win, token),
-    observe: (win, value) => send(win, value?.token, { interval: value?.interval, duration: value?.duration }),
-    async observeProactive(win, value) {
+    send,
+    async authorizeProactive(win, id) {
       check(win);
-      const { source } = flow.inspect(win, value?.token);
-      const policy = proactivePolicy(), chat = chatTarget(), selected = config;
-      if (!policy || !chat) throw new Error('请先保存主动闲聊、AI 台词、看屏幕选项和聊天 API');
+      const source = selectedSource(win, id), chat = chatTarget(), selected = config, epoch = flow.generation;
+      if (!chat) throw new Error('请先保存聊天 API 设置');
+      const identity = source.id.startsWith('window:') ? await windowIdentity(source.id) : '';
       const approved = await confirm(win, language('记住主动观察授权？', 'Remember permission for proactive screen viewing?'), language(
-        `范围：${source.name}\n每 ${policy.visionEvery} 次主动闲聊查看一次\n图片发送到：${config.base}\n简短描述发送到聊天服务：${chat}\n授权在重启后仍有效，可随时撤销。隐私关键词只能过滤窗口标题和识别结果，请避开敏感画面。`,
-        `Source: ${source.name}\nCapture once per ${policy.visionEvery} proactive chats\nImages go to: ${config.base}\nShort descriptions go to: ${chat}\nPermission persists across restarts and can be revoked. Privacy keywords only screen window titles and descriptions. Keep sensitive content out of the shared area.`));
+        `范围：${source.name}\n启用主动闲聊看屏幕后，按设置的频率查看。\n图片发送到：${selected.base}\n简短描述发送到聊天服务：${chat}\n授权在重启后仍有效，可随时撤销。隐私关键词只能过滤窗口标题和识别结果，请避开敏感画面。`,
+        `Source: ${source.name}\nWhen screen viewing is enabled, it follows your proactive chat settings.\nImages go to: ${selected.base}\nShort descriptions go to: ${chat}\nPermission persists across restarts and can be revoked. Privacy keywords only screen window titles and descriptions. Keep sensitive content out of the shared area.`));
       if (!approved) return null;
       check(win);
-      if (selected !== config || chatTarget() !== chat || proactivePolicy()?.visionEvery !== policy.visionEvery) throw new Error('设置已变更，请重新授权');
-      if (source.identity && await windowIdentity(source.id) !== source.identity) throw new Error('共享窗口已关闭或被替换，请重新授权');
+      const current = (await desktopCapturer.getSources({ types: [id.startsWith('window:') ? 'window' : 'screen'], thumbnailSize: { width: 0, height: 0 } }))
+        .find(entry => entry.id === id && entry.name === source.name && (entry.display_id || '') === source.display && !ourIds().has(entry.id));
+      if (!current || (identity && await windowIdentity(id) !== identity)) throw new Error('共享来源已变化，请重新选择并授权');
       check(win);
-      if (selected !== config || chatTarget() !== chat || proactivePolicy()?.visionEvery !== policy.visionEvery) throw new Error('设置已变更，请重新授权');
-      flow.inspect(win, value.token);
-      const next = { source, chat, vision: visionTarget() };
+      if (selected !== config || chatTarget() !== chat || flow.generation !== epoch) throw new Error('设置已变更，请重新授权');
+      const next = { source: identity ? { ...source, identity } : source, chat, vision: visionTarget() };
       writeAtomic(grantFile, next);
       grant = next;
-      flow.beginProactive(win, value.token, config, { every: policy.visionEvery, chat });
+      const policy = proactivePolicy();
+      if (policy) flow.activateProactive(win, next.source, config, { every: policy.visionEvery, chat });
       return true;
     },
     forget,
-    stop() { revoke('视觉会话已停止'); },
-    clear() { inventory = null; flow.clear(); },
+    discard: () => flow.discardPreview(),
+    clear: () => flow.discardPreview(true),
     async test(win, mode) {
       check(win);
       if (!['connection', 'image'].includes(mode)) throw new Error('视觉测试类型无效');
@@ -271,7 +267,7 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
       const policy = proactivePolicy();
       if (!matchesGrant()) return { status: 'permission' };
       if (!policy || !permitted() || !visible(win) || lockedNow() || win !== activeWindow()) return { status: 'unavailable' };
-      if (!flow.observation && !flow.busy && !flow.preview) {
+      if (flow.observation?.every !== policy.visionEvery && !flow.busy) {
         check(win);
         flow.activateProactive(win, grant.source, config, { every: policy.visionEvery, chat: endpoint });
       }

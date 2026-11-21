@@ -1,5 +1,6 @@
 'use strict';
 
+const { correctHdrBitmap } = require('../electron/vision');
 const { screenGrounded } = require('../electron/screen-grounding');
 
 const assert = require('node:assert/strict');
@@ -30,27 +31,20 @@ test('V02 preview is local, owner-bound, single-use and expires', async () => {
   assert.equal(service.status().latest, '');
 });
 
-test('V04 observation ends on elapsed duration and does not capture when revoked', async () => {
+test('a local preview and single capture preserve the proactive cadence', async () => {
   let now = 0, shots = 0, requests = 0;
   const service = new VisionFlow({ now: () => now,
     capture: async () => { shots++; return picture; }, request: async () => String(++requests) });
+  service.activateProactive('w', source, config, { every: 2, chat: 'chat' });
+  service.markSpoken('w');
   const preview = await service.stage('w', source, '', config);
-  await service.send('w', preview.token, config, { interval: 5, duration: 10 });
-  assert.equal(requests, 1);
+  assert.equal(requests, 0);
+  assert.equal(await service.send('w', preview.token, config), '1');
   now = 5 * minute;
   await service.tick(true);
-  assert.equal(requests, 2);
-  assert.equal(service.status().observation.name, source.name);
-  now = 10 * minute;
-  await service.tick(true);
-  assert.equal(service.status().observation, null);
-  await service.tick(true);
-  assert.equal(shots, 2);
-  const second = await service.stage('w', source, '', config);
-  await service.send('w', second.token, config, { interval: 5, duration: 15 });
-  now += 5 * minute;
+  assert.equal(shots, 1);
+  assert.equal(await service.proactiveSample('w', 'chat', () => true), '2');
   await service.tick(false);
-  assert.equal(shots, 3);
   assert.equal(service.status().observation, null);
 });
 
@@ -60,7 +54,7 @@ test('proactive observation checks every nth actual dialogue and never runs on t
     request: async () => { sent++; return 'private fixture'; } });
   const preview = await service.stage('w', source, '', config);
   assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
-  service.beginProactive('w', preview.token, { ...config, privateWords: '微信\n密码' }, { every: 2, chat: 'chat' });
+  service.activateProactive('w', source, { ...config, privateWords: '微信\n密码' }, { every: 2, chat: 'chat' });
   assert.equal(shots, 1);
   assert.equal(sent, 0);
   now = 24 * 60 * minute;
@@ -83,7 +77,7 @@ test('a private title skips the request and a private description skips forwardi
   const service = new VisionFlow({ capture: async () => blocked ? null : picture,
     request: async () => { sent++; return 'WeChat 消息'; } });
   const preview = await service.stage('w', source, '', config);
-  service.beginProactive('w', preview.token, { ...config, privateWords: 'ｗｅｃｈａｔ' }, { every: 1, chat: 'chat' });
+  service.activateProactive('w', source, { ...config, privateWords: 'ｗｅｃｈａｔ' }, { every: 1, chat: 'chat' });
   blocked = true;
   assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
   assert.equal(sent, 0);
@@ -101,7 +95,7 @@ test('a temporary vision failure keeps the authorized cadence for the next sampl
       return 'public topic';
     } });
   const preview = await service.stage('w', source, '', config);
-  service.beginProactive('w', preview.token, config, { every: 2, chat: 'chat' });
+  service.activateProactive('w', source, config, { every: 2, chat: 'chat' });
   service.markSpoken('w');
   assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
   assert.equal(service.status().observation.mode, 'proactive');
@@ -182,4 +176,13 @@ test('V03/V05/V06 restricted endpoint, bounded transport, text-only result and e
   await assert.rejects(visionRequest(accepted, picture, '', new AbortController().signal,
     async () => new Response('PRIVATE provider error', { status: 500 })), /^Error: 视觉 API 返回 HTTP 500$/);
   await assert.rejects(visionRequest(accepted, Buffer.alloc(1024 * 1024 + 1), '', new AbortController().signal), /图片大小/);
+});
+
+test('optional HDR correction darkens washed-out midtones and preserves hue and alpha', () => {
+  const input = Buffer.from([120, 180, 240, 255, 255, 255, 255, 255]);
+  const output = correctHdrBitmap(input);
+  assert.ok(output[0] < 120 && output[1] < 180 && output[2] < 240);
+  assert.ok(Math.abs(output[1] / output[0] - 1.5) < .02);
+  assert.deepEqual([...output.subarray(3)], [255, 255, 255, 255, 255]);
+  assert.deepEqual([...input], [120, 180, 240, 255, 255, 255, 255, 255]);
 });

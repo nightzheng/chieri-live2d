@@ -620,7 +620,7 @@ const Sizer = {
 function initPet() {
   let ignoring = null, hoverT = 0;
   const root = document.documentElement, bar = $('#petbar'), dot = $('#petdot');
-  const overUI = el => el && el.closest && el.closest('#chat, #settings, #bubble, #visionIndicator');
+  const overUI = el => el && el.closest && el.closest('#chat, #settings, #bubble');
   const setIgnore = v => { if (v !== ignoring) { ignoring = v; window.petAPI.setIgnoreMouse(v); } };
   // the menu opens only with the mouse on it: on the dot while collapsed, on the bar once open
   const over = (el, m, x, y) => { const r = el.getBoundingClientRect(); return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m; };

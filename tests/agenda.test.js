@@ -101,10 +101,23 @@ test('P01–P04 rate, quiet windows, interaction cooldown, recording, and audio 
   assert.equal(p.claim({ ...request, now: now + 900000, idle: 50 }), null);
   assert.equal(p.claim({ ...request, now: now + 900000, recording: true }), null);
   assert.ok(p.claim({ ...request, now: now + 900000 }));
+  p.spoken(now + 900000);
   assert.equal(p.claim({ ...request, now: now + 1800000 }), null);
   assert.equal(quiet('23:30', p.options()), true);
   assert.equal(quiet('07:59', p.options()), true);
   assert.equal(quiet('08:00', p.options()), false);
+});
+
+test('a canceled preset does not consume its quota or start its cooldown', t => {
+  const { store } = data(t);
+  const p = new Proactive(() => store.open(), () => 0);
+  const at = minutes => ({ now: now + minutes * 60000, zone });
+  p.configure({ ...p.options(), enabled: true, presetMin: 10, presetLimit: 1 }, now);
+  assert.deepEqual(p.claim(at(10)), { ai: false, voice: false });
+  assert.deepEqual(p.claim(at(11)), { ai: false, voice: false });
+  p.spoken(at(11).now);
+  assert.equal(p.read('state', {}).streams.preset.next, at(21).now);
+  assert.equal(p.claim(at(22)), null);
 });
 
 test('AI and preset dialogue retain independent schedules and budgets', t => {

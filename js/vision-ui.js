@@ -24,23 +24,15 @@ const VisionUI = {
     finally { this.busy = false; }
   },
   render(state) {
-    this.status = state;
+    this.status = { ...this.status, ...state };
     this.latest = state.latest || '';
     if (!state.hasPreview) this.clearPreview();
     $('#visResult').textContent = this.latest;
-    const watching = !!state.observation;
-    $('#visionIndicator').classList.toggle('hidden', !watching);
-    if (watching) {
-      const proactive = state.observation.mode === 'proactive';
-      this.observationFeedback = proactive ? '#pvStatus' : '#visTimedFeedback';
-      const mins = Math.max(0, Math.ceil((state.observation.expires - (performance.timeOrigin + performance.now())) / 60000));
-      Settings.feedback(this.observationFeedback, state.error || (proactive
-        ? state.lastProactiveSample ? I18n.text('上次主动观察已获得画面内容')
-          : `已授权 ${state.observation.name}，每 ${state.observation.every} 次主动闲聊查看一次。`
-        : `正在观察 ${state.observation.name}，剩余约 ${mins} 分钟。`), state.error ? 'error' : 'ok');
-    } else if (this.observationFeedback) {
-      Settings.feedback(this.observationFeedback, state.error, state.failure ? 'error' : '');
-      this.observationFeedback = null;
+    if (state.observation || state.error || Object.hasOwn(state, 'savedSource')) {
+      const name = state.observation?.name || this.status.savedSource?.name;
+      const label = state.error || (state.lastProactiveSample ? '上次主动观察已获得画面内容'
+        : name ? I18n.pick(`已记住授权：${name}`, `Sharing allowed: ${name}`) : '尚未授权主动观察');
+      Settings.feedback('#pvStatus', label, state.error ? 'error' : name ? 'ok' : '');
     }
     for (const key of ['Character', 'Speak', 'Remember']) $('#vis' + key).disabled = !this.latest;
   },
@@ -49,15 +41,15 @@ const VisionUI = {
     this.tokenArea = null;
     $('#visImage').removeAttribute('src');
     $('#visImage').classList.add('hidden');
-    $('#visSend').disabled = $('#visObserve').disabled = true;
+    $('#visSend').disabled = true;
     $('#pvImage').removeAttribute('src');
     $('#pvImage').classList.add('hidden');
-    $('#pvStart').disabled = true;
   },
   applyConfig(state) {
     this.render(state);
     const c = state.config;
     $('#visEnabled').checked = c.enabled;
+    $('#visHdrCorrection').checked = c.hdrCorrection;
     for (const [key, value] of Object.entries({ Provider: c.provider, Base: c.base, Model: c.model, Size: c.size,
       Quality: c.quality, Timeout: c.timeout })) $('#vis' + key).value = value;
     $('#visKey').value = '';
@@ -74,7 +66,6 @@ const VisionUI = {
       this.applyConfig(state);
       if (state.savedSource) {
         $('#pvKind').value = state.savedSource.id.startsWith('window:') ? 'window' : 'screen';
-        Settings.feedback('#pvStatus', '已记住授权：' + state.savedSource.name, 'ok');
       }
       if (state.config.enabled) await Promise.all(['vis', 'pv'].map(area => this.loadSources(area, state.savedSource?.id)));
     }
@@ -96,7 +87,7 @@ const VisionUI = {
     this.epoch++;
     this.clearPreview();
     if (clear) { this.latest = ''; $('#visResult').textContent = ''; }
-    try { await this.call(clear ? 'clear' : 'stop'); Settings.feedback(selector, clear ? '已清除视觉上下文' : '视觉会话已停止', 'ok'); }
+    try { await this.call(clear ? 'clear' : 'discard'); Settings.feedback(selector, clear ? '已清除视觉上下文' : '已丢弃截图', 'ok'); }
     catch (e) { Settings.feedback(selector, e.message, 'error'); }
   },
   readOptions() {
@@ -105,6 +96,7 @@ const VisionUI = {
       enabled: $('#visEnabled').checked, provider: $('#visProvider').value, base: $('#visBase').value.trim(),
       model: $('#visModel').value, key: key === this.revealedKey ? '' : key, clearKey: $('#visClearKey').checked,
       privateWords: $('#pvPrivateWords').value,
+      hdrCorrection: $('#visHdrCorrection').checked,
       size: +$('#visSize').value, quality: +$('#visQuality').value, timeout: +$('#visTimeout').value,
     };
   },
@@ -126,6 +118,7 @@ const VisionUI = {
     if (menu.request !== request || $('#' + area + 'Kind').value !== kind) return;
     menu.replaceChildren(...entries.map(row => new Option(row.name, row.id)));
     if (entries.some(row => row.id === old)) menu.value = old;
+    if (area === 'pv') $('#pvStart').disabled = !entries.length;
     if (announce || !entries.length) Settings.feedback(area === 'pv' ? '#pvStatus' : '#visStatus',
       entries.length ? '已更新共享来源，选好后可预览。' : '没有可分享的来源。', entries.length ? 'ok' : 'error');
   },
@@ -141,26 +134,26 @@ const VisionUI = {
     this.tokenArea = area;
     $('#' + area + 'Image').src = result.data;
     $('#' + area + 'Image').classList.remove('hidden');
-    if (area === 'pv') $('#pvStart').disabled = false;
-    else $('#visSend').disabled = $('#visObserve').disabled = false;
-    this.report('已生成本地预览。请检查画面，两分钟内可以确认。', 'ok');
+    if (area === 'vis') $('#visSend').disabled = false;
+    this.report(area === 'pv' ? '已生成本地预览。可单独点「记住授权」。' : '已生成本地预览。请检查画面，两分钟内可以确认。', 'ok');
   },
   async startProactive() {
     if (Settings.changed('proactive') || Settings.changed('vision') || Settings.changed('regular')) throw new Error('请先保存全部设置，再授权。');
-    if (this.tokenArea !== 'pv') return;
-    const started = await this.call('observeProactive', { token: this.token });
-    if (started) this.clearPreview();
+    const selected = $('#pvSource').value;
+    await this.loadSources('pv');
+    if (!selected || selected !== $('#pvSource').value) throw new Error('请选择当前要共享的来源。');
+    const started = await this.call('authorizeProactive', selected);
+    if (started) this.render(await this.call('state'));
     else this.report('已取消授权。');
   },
-  async send(observe, epoch) {
+  async send(epoch) {
     if (Settings.changed('vision')) throw new Error('请先保存全部设置，再发送截图。');
     const token = this.token;
     if (!token || this.tokenArea !== 'vis') return;
-    const value = await this.call(observe ? 'observe' : 'send', observe
-      ? { token, duration: +$('#visDuration').value, interval: +$('#visInterval').value } : token);
+    const value = await this.call('send', token);
     if (epoch !== this.epoch) return;
     this.clearPreview();
-    if (!observe) this.report(value ? '已完成截图分析' : '已取消发送', value ? 'ok' : '');
+    this.report(value ? '已完成截图分析' : '已取消发送', value ? 'ok' : '');
     if (value && !CompanionUI.busy()) say('我看完啦，描述在视觉感知里。', 'curious', 4, { voice: false });
   },
   async character(epoch) {
@@ -190,8 +183,7 @@ const VisionUI = {
     if (!window.petAPI) return;
     window.petAPI.onVision(state => this.render(state));
     const ops = {
-      '#visStatus': { visSources: () => this.sources(), visPreview: epoch => this.preview(epoch), visSend: epoch => this.send(false, epoch) },
-      '#visTimedFeedback': { visObserve: epoch => this.send(true, epoch) },
+      '#visStatus': { visSources: () => this.sources(), visPreview: epoch => this.preview(epoch), visSend: epoch => this.send(epoch) },
       '#visResultFeedback': { visCharacter: epoch => this.character(epoch), visRemember: () => this.remember(), visSpeak: () => this.speak() },
       '#pvStatus': { pvSources: () => this.sources('pv'), pvPreview: epoch => this.preview(epoch, 'pv'), pvStart: () => this.startProactive() },
     };
@@ -213,9 +205,10 @@ const VisionUI = {
         const result = await this.call('test', mode);
         this.report(result || '测试已取消', result ? 'ok' : '');
       }, '#visTestFeedback');
-    $('#visStop').onclick = $('#visGlobalStop').onclick = () => this.stop();
+    $('#visStop').onclick = () => this.stop();
     $('#pvStop').onclick = () => this.task(async () => {
       await this.call('forget');
+      this.render(await this.call('state'));
       this.report('已撤销主动观察授权', 'ok');
     }, '#pvStatus');
     $('#visClear').onclick = () => this.stop(true, '#visResultFeedback');
@@ -225,6 +218,7 @@ const VisionUI = {
         this.epoch++;
         this.clearPreview();
         $('#' + area + 'Source').replaceChildren();
+        if (area === 'pv') $('#pvStart').disabled = true;
         this.loadSources(area, undefined, true).catch(error => Settings.feedback(status, error.message, 'error'));
       };
       $('#' + area + 'Source').onchange = () => { this.epoch++; this.clearPreview(); };
