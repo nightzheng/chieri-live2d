@@ -194,7 +194,8 @@ module.exports = function companion({ store, trustedWindow, activeWindow, settin
         recording: value.recording || !!settings().rec?.on, aiReady: value.aiReady !== false });
       if (!next) return missed ? { missed } : null;
       ticket = { id: randomUUID(), win, ai: next.ai, expires: now + 20000 };
-      delivery = { ...ticket, expires: now + 30000 };
+      // A vision-enabled turn can spend 30 seconds on vision before chat and speech preparation.
+      delivery = { ...ticket, expires: now + (next.ai && proactive.options().vision ? 60000 : 30000) };
       return { proactive: { ai: next.ai, voice: next.voice, ticket: ticket.id }, missed };
     },
   };

@@ -466,6 +466,12 @@ Ollama 本地|Local Ollama
 已撤销主动观察授权|Proactive screen permission revoked
 视觉会话已停止|Vision session stopped
 上次主动观察已获得画面内容|The last proactive capture produced a screen description
+上次主动台词已引用本轮画面细节|The last proactive line used a verified screen detail
+模型收到画面描述，但回复没有可核对的细节，已改用预设台词|The model received a screen description but did not use a verifiable detail. A preset line was used.
+本轮没有可用的屏幕描述。请查看上方的观察状态或共享授权|No screen description was available for this turn. Check the status or sharing permission above.
+本轮没有匹配的共享授权，请检查视觉设置并重新预览授权|No matching screen permission was found. Check the vision settings, then preview and approve sharing again.
+本轮聊天地址与已保存的授权地址不一致，未发送画面描述|The chat endpoint didn't match the saved authorization. No screen description was sent.
+本轮主动聊天请求失败，已改用预设台词|The proactive chat request failed. A preset line was used.
 本次未识别到可用于闲聊的画面内容|No suitable screen details were found for this chat
 已清除视觉上下文|Vision context cleared
 已保存到长期记忆|Saved to long-term memory

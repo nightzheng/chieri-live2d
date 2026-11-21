@@ -269,13 +269,17 @@ module.exports = function registerVision(trustedWindow, activeWindow, proactiveP
     async sample(win, endpoint, permitted) {
       await ready;
       const policy = proactivePolicy();
-      if (!matchesGrant() || !policy || !permitted() || !visible(win) || lockedNow() || win !== activeWindow()) return null;
+      if (!matchesGrant()) return { status: 'permission' };
+      if (!policy || !permitted() || !visible(win) || lockedNow() || win !== activeWindow()) return { status: 'unavailable' };
       if (!flow.observation && !flow.busy && !flow.preview) {
         check(win);
         flow.activateProactive(win, grant.source, config, { every: policy.visionEvery, chat: endpoint });
       }
-      return flow.proactiveSample(win, endpoint,
-        () => !!allowed() && matchesGrant() && proactivePolicy()?.visionEvery === flow.observation?.every && permitted());
+      const session = flow.observation;
+      if (session?.mode === 'proactive' && (session.spoken + 1) % session.every !== 0) return { status: 'cadence' };
+      const description = await flow.proactiveSample(win, endpoint,
+        () => !!allowed() && matchesGrant() && proactivePolicy()?.visionEvery === flow.observation?.every && permitted(), language('中文', 'English'));
+      return { description, status: description ? 'captured' : 'unavailable' };
     },
   };
 };

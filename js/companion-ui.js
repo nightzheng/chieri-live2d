@@ -211,24 +211,28 @@ const CompanionUI = {
     ].filter(([category]) => category !== this.lastCategory);
     let [category, reply, ja] = pick(choices);
     let emotion = 'gentle', action = { 休息: 'stretch', 话题: 'earFlick', 问候: 'swish' }[category];
+    let screenStatus = null;
     try {
       if (options.ai && AI.ready()) {
         try {
-          const { replyText, usedScreen } = await AI.complete(AI.systemPrompt(aiState()) +
+          const result = await AI.complete(AI.systemPrompt(aiState()) +
             '\n这是主动打招呼。只说一句，避免重复上次主题。没有可用屏幕描述时，以' + category + '为备用主题。不要猜测用户的情绪、健康或屏幕内容。',
           [{ role: 'user', content: '请自然地跟我开启一个话题。' }],
           { timeout: 15000, maxTokens: 240, proactive: options.ticket });
-          const out = AI.parse(replyText);
+          screenStatus = result.screenStatus;
+          const out = AI.parse(result.replyText);
           const screenClaim = /(?:我|刚)(?:刚才|刚刚)?(?:看见|看到|看着|注意到你正在)|(?:\bI (?:can see|see|(?:just )?saw|notice(?:d)? you)|on your screen)/i;
           const stateGuess = /你(?:一定|肯定|明显|看起来)(?:很|有点)?(?:累|难过|疲惫|生病|不舒服)|you (?:must be|(?:look|seem)(?: like you are)?) (?:tired|sad|sick|exhausted|unwell)/i;
           if (out.reply !== '……' && out.reply !== this.lastLine && !stateGuess.test(out.reply) &&
-              (usedScreen || !screenClaim.test(out.reply))) {
+              screenStatus !== 'unreferenced' && (screenStatus === 'grounded' || !screenClaim.test(out.reply))) {
             reply = out.reply.slice(0, 100);
             ja = out.ja;
             emotion = out.emotion || emotion;
             action = Object.hasOwn(AI_ANIMATIONS, out.action) || ['hop', 'swish', 'twitch', 'blush', 'hearts', 'notes'].includes(out.action) ? out.action : 'none';
+          } else if (screenStatus === 'grounded') {
+            screenStatus = 'unreferenced';
           }
-        } catch (_) {}
+        } catch (_) { screenStatus = 'requestFailed'; }
       }
       const available = () => !this.busy() && !Rec.on && !this.queued && !S.drag && startingActivity === this.activityAt;
       if (!available() || !await this.call('canSpeak', options.ticket) || !available()) return;
@@ -241,6 +245,17 @@ const CompanionUI = {
       if (S.anim?.ambient) S.anim = null;
       say(reply, emotion, null, { ...opt, buffer, voice: !!buffer });
       doAction(action);
+      if (options.ai) {
+        const note = {
+          grounded: '上次主动台词已引用本轮画面细节',
+          unreferenced: '模型收到画面描述，但回复没有可核对的细节，已改用预设台词',
+          unavailable: '本轮没有可用的屏幕描述。请查看上方的观察状态或共享授权',
+          permission: '本轮没有匹配的共享授权，请检查视觉设置并重新预览授权',
+          endpoint: '本轮聊天地址与已保存的授权地址不一致，未发送画面描述',
+          requestFailed: '本轮主动聊天请求失败，已改用预设台词',
+        }[screenStatus];
+        Settings.feedback('#pvChatStatus', note || '', screenStatus === 'grounded' ? 'ok' : note ? 'error' : '');
+      }
       await Chat.addProactive(I18n.fixed(reply));
     } catch (_) {} finally { this.talking = false; }
   },

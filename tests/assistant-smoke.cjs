@@ -25,6 +25,7 @@ let clockOffset = 0;
 Object.defineProperty(performance, 'now', { value: () => realNow() + clockOffset });
 
 let approved = false, shots = 0, sent = 0, failed = false, privateWindow = false, ownWindow, proactiveBody, chatBody;
+let ignoreScreen = false;
 const red = Buffer.alloc(96 * 64 * 4, 255);
 const responses = [], semanticRequests = [];
 const server = http.createServer((req, res) => {
@@ -37,7 +38,8 @@ const server = http.createServer((req, res) => {
       if (failed) { res.writeHead(503); return res.end('synthetic service error'); }
       const message = JSON.parse(body).messages[1].content;
       responses.push(message[1].image_url.url);
-      res.end(JSON.stringify({ choices: [{ message: { content: '合成画面的视觉描述' } }] }));
+      const content = message[0].text.includes('NO_SCREEN_TOPIC') ? '合成画面的视觉描述：桌上有一张地图。' : '合成画面的视觉描述';
+      res.end(JSON.stringify({ choices: [{ message: { content } }] }));
     } else {
       const payload = JSON.parse(body);
       if (payload.messages[0].content.includes('只提取末句')) {
@@ -53,6 +55,8 @@ const server = http.createServer((req, res) => {
       const screen = proactive && payload.messages[0].content.includes('合成画面的视觉描述');
       const output = { reply: screen ? '我看到屏幕上有一张地图，想聊聊路线吗？' : proactive && privateWindow ? '我看到屏幕上有一份乐谱。'
         : proactive ? '生成的测试问候' : '正常聊天回复', emotion: 'happy', action: 'notes' };
+      if (screen) output.screenDetail = '一张地图';
+      if (screen && ignoreScreen) output.reply = '没有用上画面内容的测试问候。';
       res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(output) } }] }));
     }
   });
@@ -200,13 +204,17 @@ async function run() {
     clockOffset += 31000;
     await until(() => proactiveBody);
     assert.equal(JSON.stringify(proactiveBody).includes('合成画面的视觉描述'), expected);
-    if (expected) assert.match(proactiveBody.messages[0].content, /以其中一个明确、非敏感的可见细节为主话题/);
+    if (expected) {
+      assert.match(proactiveBody.messages[0].content, /"screenDetail"/);
+      assert.match(proactiveBody.messages.at(-1).content, /这轮屏幕描述中的一个具体细节/);
+    }
     await until(() => runJS('!CompanionUI.talking'));
   }
   assert.equal(shots, shotsBefore + 1);
   assert.equal(sent, sentBefore + 1);
   assert.equal((await call('state')).latest, '');
   assert.equal((await call('state')).lastProactiveSample, true);
+  assert.match(await runJS("document.querySelector('#pvChatStatus').textContent"), /已引用本轮画面细节/);
   assert.equal(await runJS("document.querySelector('#msgs').textContent.includes('生成的测试问候')"), true);
   const proactiveHistory = (await ipc('memory', 'history')).filter(row => row.conversation.startsWith('proactive:'));
   assert.ok(proactiveHistory.some(row => row.text === '生成的测试问候'));
@@ -234,6 +242,17 @@ async function run() {
   assert.equal(shots, shotsBefore + 1);
   assert.match((await call('state')).error, /隐私窗口/);
   assert.ok((await ipc('memory', 'history')).every(row => !row.text.includes('我看到屏幕上有一份乐谱')));
+  ignoreScreen = true;
+  privateWindow = false;
+  await ipc('companion', 'configure', { ...await ipc('companion', 'options'), visionEvery: 1 });
+  await call('clear');
+  proactiveBody = undefined;
+  now += 21 * 60000;
+  clockOffset += 31000;
+  await until(() => proactiveBody);
+  assert.match(JSON.stringify(proactiveBody), /合成画面的视觉描述/);
+  await until(() => runJS("document.querySelector('#pvChatStatus').textContent.includes('没有可核对的细节')"));
+  assert.ok((await ipc('memory', 'history')).every(row => !row.text.includes('没有用上画面内容的测试问候')));
   await call('forget');
   assert.equal((await call('state')).savedSource, null);
   assert.equal(fs.existsSync(path.join(profile, 'proactive-screen.json')), false);

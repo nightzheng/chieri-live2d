@@ -1,5 +1,7 @@
 'use strict';
 
+const { screenGrounded } = require('../electron/screen-grounding');
+
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { DEFAULTS, VisionFlow, validateConfig, visionRequest } = require('../electron/vision');
@@ -114,9 +116,12 @@ test('a temporary vision failure keeps the authorized cadence for the next sampl
 });
 
 test('every-chat observation distinguishes unsuitable images from a usable topic without retaining the description', async () => {
-  let now = 0, text = '无可用画面主题。';
-  const service = new VisionFlow({ now: () => now, capture: async () => picture, request: async () => text });
-  service.activateProactive('w', source, config, { every: 1, chat: 'chat' });
+  let now = 0, text = 'NO_SCREEN_TOPIC';
+  const service = new VisionFlow({ now: () => now, capture: async () => picture, request: async options => {
+    assert.equal(options.timeout, 30000);
+    return text;
+  } });
+  service.activateProactive('w', source, { ...config, timeout: 30000 }, { every: 1, chat: 'chat' });
   assert.equal(await service.proactiveSample('w', 'chat', () => true), null);
   assert.match(service.status().error, /未识别到/);
   assert.equal(service.status().lastProactiveSample, false);
@@ -126,6 +131,17 @@ test('every-chat observation distinguishes unsuitable images from a usable topic
   assert.equal(await service.proactiveSample('w', 'chat', () => true), text);
   assert.equal(service.status().lastProactiveSample, true);
   assert.equal(service.status().latest, '');
+});
+
+test('screen grounding requires a concrete phrase from this capture in the visible reply', () => {
+  const wrap = (reply, screenDetail) => JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply, screenDetail }) } }] });
+  const sight = '画面上是一张地图';
+  assert.equal(screenGrounded(wrap('这张地图上的路线挺有趣。', '地图'), sight), true);
+  assert.equal(screenGrounded(wrap('今天过得怎么样？', '地图'), sight), false);
+  assert.equal(screenGrounded(wrap('我看到一个水杯', '水杯'), sight), false);
+  assert.equal(screenGrounded(wrap('画面真有趣', '画面'), sight), false);
+  const english = JSON.stringify({ content: [{ type: 'text', text: '{"reply":"That bicycle looks old.","screenDetail":"bicycle"}' }] });
+  assert.equal(screenGrounded(english, 'A red bicycle'), true);
 });
 
 test('stopping during capture or network quarantines late results', async () => {
